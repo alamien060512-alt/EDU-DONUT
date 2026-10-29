@@ -24,7 +24,7 @@ process.on('uncaughtException', (e) => log('uncaught: ' + (e && e.message)));
 process.on('unhandledRejection', (e) => log('unhandled: ' + (e && e.message)));
 let ah = null, client = null;
 
-const log = (m) => { const l = `${new Date().toISOString().slice(11, 19)} ${m}`; state.log.push(l); state.log = state.log.slice(-200); console.log(l); };
+const log = (m) => { const l = `${new Date().toISOString().slice(11, 19)} ${m}`; state.log.push(l); state.log = state.log.slice(-200); state.logSeq = (state.logSeq || 0) + 1; console.log(l); };
 
 const ledger = new Ledger(log);
 const market = new Market(log);
@@ -381,7 +381,12 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/session') return send({ auth: access.passwordMode, role: req.role, publicMode: access.publicMode, readOnly: !access.canControl(req) });
     if (u.pathname === '/status') return send({ connected: state.connected, live: state.live, spent: state.spent, listed: state.listed, maxListings: state.maxListings, paused: state.paused });
     if (u.pathname === '/rules') return send(rules.list());
-    if (u.pathname === '/log') return send(state.log);
+    if (u.pathname === '/log') {
+      const since = u.searchParams.get('since');            // the terminal asks for just the lines it has not seen yet
+      if (since === null) return send(state.log);
+      const seq = state.logSeq || 0, n = Math.min(Math.max(seq - (+since || 0), 0), state.log.length);
+      return send({ seq, lines: n ? state.log.slice(-n) : [] });
+    }
     if (u.pathname === '/holdings') return send(state.holdings);
     if (u.pathname === '/prices') return send(state.prices);
     if (u.pathname === '/market') {
@@ -399,7 +404,9 @@ http.createServer(async (req, res) => {
       if (!access.sameOrigin(req) || req.headers['x-bot'] !== '1') return send({ error: 'forbidden: commands only from the bot page (send header X-Bot: 1)' }, 403);
       if (!access.canControl(req)) return send({ error: 'view only: only the team login can send commands, and only when the bot was started with BOT_REMOTE_CONTROL=1' }, 403);
       let b = ''; for await (const d of req) b += d;
-      return send({ result: await run(JSON.parse(b).command) });
+      const line = String(JSON.parse(b).command || '');
+      if (/^\s*quit\b/i.test(line)) return send({ error: 'quit only works at the PC console, not from the website' }, 403);   // nobody should be able to stop the bot remotely
+      return send({ result: await run(line) });
     }
     send({ error: 'not found', routes: ['/', '/session', '/market', '/market/<item>', '/trades', '/status', '/rules', '/log', '/holdings', '/prices', 'POST /command (header X-Bot: 1)'] }, 404);
   } catch (e) { send({ error: e.message }, 400); }

@@ -159,6 +159,16 @@ The bot searches each watched item in `/ah` (about 70 by default, one every 7 se
 which covers more items. The site only works while the bot runs. By default only your own computer can open it; to use it from your phone away
 from home see section 9.
 
+**Built-in terminal.** At the bottom of the page (or click **Terminal** at the top) is a terminal. Type any command from
+section 6 and press Enter, exactly as you would at the `bot>` prompt in Command Prompt:
+
+- `Up` / `Down` brings back earlier commands, `Tab` completes a command, `clear` clears the screen.
+- The bot's live log scrolls by in the same window; untick "show bot log" to hide it.
+- Risky commands (`live on`, `buynow`, `sellnow`, `inspectbuy`) ask "Run it?" first.
+- `quit` does not work from the website, so nobody can stop the bot remotely. Stop it at the PC with `Ctrl+C`.
+- It works from your own PC without a login. Remotely it needs the **team** login with `BOT_REMOTE_CONTROL=1`; a viewer login
+  sees the log but cannot type, and visitors who are not signed in do not see the terminal at all.
+
 Other pages: `/market`, `/market/<item>`, `/trades`, `/status`, `/rules`, `/log`, `/holdings`, `/prices`.
 Sending commands to `POST /command` needs the header `X-Bot: 1`.
 

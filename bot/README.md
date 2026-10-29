@@ -18,7 +18,7 @@ The bot's source. For installing, commands and troubleshooting read the top-leve
 
 ## API (http://127.0.0.1:8080, this computer only)
 
-`GET /` price website · `/market` · `/market/<item>` · `/trades` · `/status` · `/rules` · `/log` · `/holdings` · `/prices`
+`GET /` price website (with a built-in terminal) · `/market` · `/market/<item>` · `/trades` · `/status` · `/rules` · `/log` (`/log?since=N` for new lines only) · `/holdings` · `/prices`
 `POST /command {"command":"..."}` needs the header `X-Bot: 1` (blocks other websites from sending commands).
 Without a password only `/market` and `/prices` allow other origins to read them. With `BOT_PASSWORD` set every route needs a login, except
 `/`, `/session`, `/market` and `/market/<item>` when `BOT_PUBLIC=1`. Commands need the team login plus `BOT_REMOTE_CONTROL=1`

@@ -39,6 +39,15 @@ button{cursor:pointer}
 .btn.primary:hover{filter:brightness(1.05)}
 a.btn{display:inline-block;color:inherit;text-decoration:none}
 body.public .botonly{display:none !important}
+.term{margin-top:14px}
+.termbar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.termbar label{font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.termout{height:300px;overflow:auto;background:#0d1117;color:#e6edf3;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:10px 12px;white-space:pre-wrap;word-break:break-word}
+.termout div{min-height:1.5em}
+.l-cmd{color:#7ee787}.l-err{color:#ff7b72}.l-log{color:#8b949e}.l-note{color:#79c0ff}
+.termin{display:flex;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--line)}
+.termin .prompt{font:14px ui-monospace,Menlo,Consolas,monospace;color:var(--muted)}
+.termin input{flex:1;min-width:0;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 10px;font:16px ui-monospace,Menlo,Consolas,monospace}
 button:disabled,input:disabled{opacity:.5;cursor:not-allowed}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
@@ -90,6 +99,7 @@ td small{color:var(--muted)}
     <h1>DonutSMP Prices</h1>
     <span class="pill" id="botPill"><span class="dot"></span><span id="botText">connecting</span></span>
     <span class="spacer"></span>
+    <a class="btn botonly" id="termLink" href="#term">Terminal</a>
     <button class="btn botonly" id="scanBtn" type="button">Pause scanning</button>
     <span class="pill" id="roPill" hidden title="Remote control is off on the PC">view only</span>
     <a class="btn" id="signin" href="/login" hidden>Team sign in</a>
@@ -144,6 +154,16 @@ td small{color:var(--muted)}
       <div class="empty">Select an item to see its price history and set a buy rule.</div>
     </aside>
   </div>
+  <section class="panel botonly term" id="term" aria-label="Bot terminal">
+    <div class="termbar"><b>Terminal</b><span class="spacer"></span>
+      <label><input type="checkbox" id="showLog" checked> show bot log</label>
+      <button class="btn" id="termClear" type="button">Clear</button></div>
+    <div id="termOut" class="termout" role="log" aria-live="polite" tabindex="0"></div>
+    <form id="termForm" class="termin" autocomplete="off"><span class="prompt" aria-hidden="true">bot&gt;</span>
+      <input id="termIn" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Bot command" placeholder="type a command, or help">
+      <button class="btn primary" id="termSend" type="submit">Send</button></form>
+  </section>
+
   <p class="note">Prices are the cheapest plain (un-enchanted) listings the bot sees. Each item is re-checked in turn, so the newest ones may be a few minutes old. Data stays on your computer.</p>
 </div>
 
@@ -227,6 +247,7 @@ function render() {
   $('botPill').style.display = pub ? 'none' : '';
   $('signin').hidden = !pub; $('logout').hidden = !S.session.auth || pub; $('roPill').hidden = pub || !S.session.readOnly;
   for (const id of ['scanBtn', 'trackBtn', 'track']) $(id).disabled = S.session.readOnly;
+  termState();
   const b = S.bot, st = S.status, tr = S.trades && S.trades.summary;
   $('botPill').className = 'pill ' + (b.connected ? 'ok' : 'bad');
   $('botText').textContent = b.connected ? (b.live ? 'bot online · LIVE trading' : 'bot online · dry run') : 'bot not in game';
@@ -348,7 +369,63 @@ $('themeBtn').addEventListener('click', () => {
 });
 try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
 
-refresh(); setInterval(refresh, 8000);
+// ---------- terminal ----------
+const COMMANDS = ['help', 'status', 'rules', 'buy', 'drop', 'limit', 'listed', 'pause', 'resume', 'live on', 'live off', 'scan', 'trades', 'fee', 'market on', 'market off', 'watch', 'watch add', 'watch remove', 'inv', 'peek', 'cmd', 'buynow', 'sellnow', 'inspectbuy', 'clear'];
+const RISKY = /^\s*(live\s+on|buynow|sellnow|inspectbuy)\b/i;
+const T = { seq: 0, hist: [], pos: 0, first: true };
+try { T.hist = JSON.parse(localStorage.getItem('termHist') || '[]'); } catch {}
+T.pos = T.hist.length;
+function tline(text, cls = '') {
+  const out = $('termOut'), stick = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+  const d = el('div', { class: cls, text }); out.append(d);
+  while (out.childElementCount > 600) out.firstChild.remove();
+  if (stick) out.scrollTop = out.scrollHeight;
+}
+async function pollLog() {
+  if (S.session.role === 'public') return;
+  try {
+    const r = await get('/log?since=' + T.seq);
+    const lines = T.first ? r.lines.slice(-40) : r.lines;       // on first load show only the latest lines
+    T.seq = r.seq; T.first = false;
+    if ($('showLog').checked) lines.forEach((l) => tline(l, 'l-log'));
+  } catch {}
+}
+function termState() {
+  const ro = S.session.readOnly;
+  $('termIn').disabled = ro; $('termSend').disabled = ro;
+  $('termIn').placeholder = ro ? 'view only: this login cannot send commands' : 'type a command, or help';
+}
+$('termForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const line = $('termIn').value.trim(); if (!line || S.session.readOnly) return;
+  $('termIn').value = '';
+  if (T.hist[T.hist.length - 1] !== line) { T.hist.push(line); T.hist = T.hist.slice(-100); try { localStorage.setItem('termHist', JSON.stringify(T.hist)); } catch {} }
+  T.pos = T.hist.length;
+  tline('bot> ' + line, 'l-cmd');
+  if (line === 'clear') { $('termOut').textContent = ''; return; }
+  if (RISKY.test(line) && !confirm('This can spend real in-game money:\n\n' + line + '\n\nRun it?')) { tline('cancelled', 'l-note'); return; }
+  try {
+    const r = await cmd(line);
+    tline(typeof r === 'string' ? r : JSON.stringify(r, null, 2));
+    refresh();
+  } catch (err) { tline(err.message, 'l-err'); }
+});
+$('termIn').addEventListener('keydown', (e) => {
+  const i = $('termIn');
+  if (e.key === 'ArrowUp') { e.preventDefault(); if (T.pos > 0) i.value = T.hist[--T.pos]; }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); T.pos = Math.min(T.pos + 1, T.hist.length); i.value = T.hist[T.pos] || ''; }
+  else if (e.key === 'Tab') {
+    e.preventDefault();
+    const v = i.value.toLowerCase(), m = COMMANDS.filter((c) => c.startsWith(v));
+    if (m.length === 1) i.value = m[0] + ' '; else if (m.length > 1) tline(m.join('   '), 'l-note');
+  }
+});
+$('termLink').addEventListener('click', () => setTimeout(() => $('termIn').focus(), 300));
+$('termClear').addEventListener('click', () => { $('termOut').textContent = ''; });
+tline('Type a command and press Enter. Up/Down = history, Tab = complete, "clear" = clear. help lists everything.', 'l-note');
+setInterval(pollLog, 2000);
+
+refresh(); setInterval(refresh, 8000); pollLog();
 </script>
 </body>
 </html>
