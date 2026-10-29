@@ -1,4 +1,4 @@
-// Usage: npm run rakdebug   -> runs the bot's RakNet handshake alone and prints every step.
+// Usage: npm run rakdebug. Runs just the RakNet handshake and prints every step, to see where a connection gets stuck.
 require('./raknet-patch');
 const { Client } = require('jsp-raknet');
 const host = process.argv[2] || process.env.SERVER_HOST || 'donutsmp.net';

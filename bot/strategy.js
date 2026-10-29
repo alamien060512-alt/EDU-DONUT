@@ -1,8 +1,8 @@
-// Pure trading logic, no network. A rule says: buy `item` at or below `maxPrice`
-// (per unit), then relist at maxPrice-paid * sellMultiple (default 2x).
+// Pure trading logic, nothing here touches the network. A rule means: buy `item` at `maxPrice` or less
+// (per item), then relist at the price we paid times sellMultiple (2x by default).
 const clean = (s) => String(s || '').toLowerCase().replace(/^minecraft:/, '').replace(/\s+/g, '_');
 
-// "1.5k" "2m" "3b" "250" -> number
+// turns "1.5k", "2m", "3b" or "250" into a number
 function parsePrice(s) {
   const m = /^(\d+(?:\.\d+)?)([kmb]?)$/i.exec(String(s).trim());
   if (!m) return NaN;
@@ -20,7 +20,7 @@ class Rules {
   }
   remove(item) { return this.rules.delete(clean(item)); }
   list() { return [...this.rules.values()]; }
-  // listing: { item, price (total), count }
+  // a listing looks like { item, price (whole stack), count }
   matches(listing) {
     const r = this.rules.get(clean(listing.item));
     if (!r || !(listing.count > 0)) return null;
@@ -29,13 +29,13 @@ class Rules {
   }
   sellPrice(item, paidUnit, count) {
     const r = this.rules.get(clean(item));
-    if (r && r.sellUnit) return Math.floor(r.sellUnit * count); // fixed per-item sell price
+    if (r && r.sellUnit) return Math.floor(r.sellUnit * count); // fixed sell price per item, ignores what we paid
     const mult = r ? r.sellMultiple : 2;
     return Math.floor(paidUnit * mult * count);
   }
 }
 
-// buy <item> <maxPrice> [sell <unitPrice> | <multiple>]
+// buy <item> <maxPrice> [sell <unitPrice> | <multiple>]: turns the typed words into a rule
 function parseBuy(args) {
   const [item, max, a, b] = args;
   const maxPrice = parsePrice(max);

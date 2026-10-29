@@ -1,5 +1,5 @@
-// Market board: lowest price per item (plus history), fed by the in-game auction house scanner
-// or, when a DONUTSMP_API_KEY is set, by the official API. Persisted in data/market.json.
+// The price board: lowest price per item plus its history. Filled by the in-game auction scanner, or by the
+// official API if DONUTSMP_API_KEY is set. Saved to data/market.json.
 const fs = require('fs');
 const path = require('path');
 
@@ -34,7 +34,7 @@ class Market {
     this.log = log; this.items = {}; this.on = process.env.MARKET !== '0'; this.last = null; this.lastSave = 0; this.passes = 0; this.current = null;
     try { this.items = JSON.parse(fs.readFileSync(FILE, 'utf8')).items || {}; } catch {}
   }
-  // units: per-item prices of the plain (un-enchanted) listings seen for this item.
+  // units = per-item prices of the plain (not enchanted) listings we saw for this item.
   record(key, name, units, source) {
     units = units.filter((u) => u > 0).sort((a, b) => a - b);
     if (!units.length) return;
@@ -53,7 +53,7 @@ class Market {
     try { fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(FILE + '.tmp', JSON.stringify({ items: this.items })); fs.renameSync(FILE + '.tmp', FILE); }
     catch (e) { this.log('market save failed: ' + e.message); }
   }
-  change(it) {          // price change vs about 24h ago (or the oldest point if younger, needs >= 1h of history)
+  change(it) {          // % change since about 24h ago (or the oldest point we have). Needs at least an hour of history, else null.
     const h = it.history; if (h.length < 2) return null;
     const cutoff = Date.now() - DAY; let ref = h[0];
     for (const p of h) { if (p[0] <= cutoff) ref = p; else break; }

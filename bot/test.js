@@ -11,7 +11,7 @@ const { parseBuy } = require('./strategy');
 const b = parseBuy(['diamond', '5k', 'sell', '5.1k']);
 assert.strictEqual(b.sellUnit, 5100);
 const r2 = new Rules(); r2.add(b.item, b.maxPrice, b.sellMultiple, b.sellUnit);
-assert.strictEqual(r2.sellPrice('diamond', 4900, 8), 40800);       // 5.1k each x 8, ignores paid price
+assert.strictEqual(r2.sellPrice('diamond', 4900, 8), 40800);       // 5.1k each x 8, what we paid doesn't matter
 assert.strictEqual(parseBuy(['dirt', '10', '1.02']).sellMultiple, 1.02);
 assert.throws(() => parseBuy(['dirt']));
 console.log('sell price ok');

@@ -1,7 +1,7 @@
-// jsp-raknet fixes for current Bedrock servers:
-//  - RakNet protocol 10 -> 11 (servers silently ignore 10)
-//  - MTU probing: it only steps 1400 -> 1000 and then gives up, but DonutSMP's
-//    path drops big packets. Step down in 200s all the way to 576 and try longer.
+// Fixes for jsp-raknet (the pure-JS RakNet) so it can talk to a current Bedrock server:
+//  - RakNet protocol 10 -> 11. The server quietly ignores 10.
+//  - MTU probing. It only steps down 1400 -> 1000 and then gives up, but DonutSMP's path drops big
+//    packets. Now it steps down by 200 all the way to 576 and tries a bit longer.
 const fs = require('fs');
 const f = require.resolve('jsp-raknet/js/Client.js');
 let src = fs.readFileSync(f, 'utf8');
@@ -12,9 +12,9 @@ src = src.replace('const RAKNET_PROTOCOL = 10;', 'const RAKNET_PROTOCOL = 11;')
   .replace('await sleep(1500);', 'await sleep(1200);');
 if (src !== before) fs.writeFileSync(f, src);
 
-// The server's OpenConnectionReply1 is 32 bytes: it has "security" on and carries a
-// 4-byte cookie that must be echoed (plus a challenge byte) in OpenConnectionRequest2.
-// jsp-raknet ignores the cookie, so the server never answers step 2.
+// The server's OpenConnectionReply1 is 32 bytes because "security" is on: it carries a 4-byte cookie that
+// has to be echoed back (plus a challenge byte) in OpenConnectionRequest2. jsp-raknet ignores the cookie,
+// so the server never answered step 2.
 function patchFile(rel, pairs) {
   const file = require.resolve('jsp-raknet/js/' + rel);
   let s = fs.readFileSync(file, 'utf8'), o = s;
@@ -31,19 +31,19 @@ patchFile('Client.js', [[
   'packet.clientGUID = this.id;\n        packet.serverAddress',
   'packet.clientGUID = this.id;\n        packet.cookie = decodedPacket.cookie;\n        packet.serverAddress']]);
 
-// Big bursts (chunks right after spawn) overflow jsp-raknet's 256-slot windows. Packets past
-// the window were dropped but still ACKed, so the server never resent them and the
-// encryption counter drifted ("Checksum mismatch"). Bigger windows, and ACK only what we keep.
+// Right after spawn the server sends a huge burst of chunks and overflows jsp-raknet's 256-slot windows.
+// Packets past the window were thrown away but still ACKed, so the server never resent them and the
+// encryption counter fell out of sync ("Checksum mismatch"). Bigger windows now, and we only ACK what we kept.
 patchFile('Connection.js', [
   ['this.receiveWindow = new SlidingReceiveWindow(256);', 'this.receiveWindow = new SlidingReceiveWindow(16384);'],
   ['this.reliableReceiveWindow = new SlidingOrderedWindow(256);', 'this.reliableReceiveWindow = new SlidingOrderedWindow(16384);'],
   ['this.ackQueue.push(dataPacket.sequenceNumber);\n        this.receiveWindow.set(', 'if (dataPacket.sequenceNumber <= this.receiveWindow.windowEnd) this.ackQueue.push(dataPacket.sequenceNumber);\n        this.receiveWindow.set('],
 ]);
 
-// Deliver ReliableOrdered frames by orderIndex (per channel) after split reassembly, as RakNet
-// specifies. jsp-raknet orders by the reliable messageIndex instead, so a small packet sent
-// between the fragments of a big one is processed first, breaking the encrypted stream
-// ("Checksum mismatch"). messageIndex is now only used to drop duplicates.
+// RakNet says ReliableOrdered frames are delivered by orderIndex (per channel), after split packets are put
+// back together. jsp-raknet used the reliable messageIndex instead, so a small packet sent between the pieces
+// of a big one got processed first and broke the encrypted stream ("Checksum mismatch"). messageIndex is now
+// only used to drop duplicates.
 (function patchOrdering() {
   const file = require.resolve('jsp-raknet/js/Connection.js');
   let s = fs.readFileSync(file, 'utf8');

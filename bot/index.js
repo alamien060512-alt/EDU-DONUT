@@ -1,8 +1,7 @@
 // DonutSMP headless Bedrock trader.
-//   DONUTSMP_API_KEY=xxx node bot/index.js            (dry run, never spends)
-//   LIVE=1 ... node bot/index.js                       (really buys / sells)
-// Console commands: help | status | rules | buy <item> <maxPrice> [x2] | drop <item>
-//   | cmd <any /command> | scan | trades | fee <percent> | inv | sellnow <slot> <price> yes | buynow <item> <max> yes | peek <item> | inspectbuy <item> | live on|off | quit      API: http://127.0.0.1:8080
+//   node bot/index.js            dry run, spends nothing
+//   LIVE=1 node bot/index.js     really buys and sells
+// Type "help" at the bot> prompt to see the commands. Website + API: http://127.0.0.1:8080
 const http = require('http');
 const readline = require('readline');
 const { Rules, parseBuy, parsePrice, clean } = require('./strategy');
@@ -19,7 +18,7 @@ const API_PORT = +process.env.BOT_API_PORT || 8080;
 const SCAN_MS = +process.env.SCAN_MS || 15000;
 const state = { recentChat: [], maxListings: +process.env.MAX_LISTINGS || 0, listed: 0, paused: null, live: process.env.LIVE === '1', connected: false, spent: 0, log: [], holdings: [], prices: {} };
 const rules = new Rules();
-// A dead connection can still emit a late error; don't let that kill the bot.
+// A dead connection can still throw a late error. Don't let that take the whole bot down.
 process.on('uncaughtException', (e) => log('uncaught: ' + (e && e.message)));
 process.on('unhandledRejection', (e) => log('unhandled: ' + (e && e.message)));
 let ah = null, client = null;
@@ -29,8 +28,8 @@ const log = (m) => { const l = `${new Date().toISOString().slice(11, 19)} ${m}`;
 const ledger = new Ledger(log);
 const market = new Market(log);
 const watch = new Watchlist();
-const MARKET_MS = +process.env.MARKET_MS || 7000;     // pause between in-game price searches
-// One auction-house job at a time: trading, manual commands and the price scanner share one window.
+const MARKET_MS = +process.env.MARKET_MS || 7000;     // pause between in-game price searches (ms)
+// Only one auction-house job at a time. Trading, manual commands and the price scanner all share the same window.
 let ahChain = Promise.resolve();
 function withAh(fn) { const run = ahChain.then(fn, fn); ahChain = run.catch(() => {}); return run; }
 
@@ -45,18 +44,18 @@ const toListing = (r) => ({
   count: (r.item && +r.item.count) || 1, seller: r.seller && r.seller.name,
 });
 
-// AUTH_TITLE=android|ios|playstation|switch picks which Minecraft app identity signs in.
+// AUTH_TITLE=android|ios|playstation|switch picks which Minecraft app we sign in as.
 function authOptions() {
   const T = require('prismarine-auth').Titles;
   const t = { android: ['MinecraftAndroid', 'Android'], ios: ['MinecraftIOS', 'iOS'], playstation: ['MinecraftPlaystation', 'PlayStation'], switch: ['MinecraftNintendoSwitch', 'Nintendo'] }[process.env.AUTH_TITLE];
-  const [title, deviceType] = t || ['MinecraftAndroid', 'Android']; // Android + Sisu is how MinecraftAuth does Bedrock
+  const [title, deviceType] = t || ['MinecraftAndroid', 'Android']; // Android + Sisu is how MinecraftAuth signs in to Bedrock too
   return { flow: process.env.AUTH_FLOW || 'sisu', authTitle: T[title], deviceType };
 }
 
-// ---- bot connection (Xbox login: first run prints a microsoft.com/link code) ----
+// ---- bot connection (first run prints a microsoft.com/link code for the Xbox login) ----
 let stubbed = false;
 async function connect() {
-  // Phones (Termux) can't build raknet-native; fall back to the pure-JS RakNet.
+  // Phones (Termux) can't build raknet-native, so fall back to the pure-JS RakNet.
   let backend = process.env.RAKNET || 'raknet-native';
   try { if (stubbed) throw 0; require('raknet-native'); } catch {
     stubbed = true;
@@ -70,13 +69,13 @@ async function connect() {
   }
   require('./msa-patch');
   require('./crypto-patch');
-  // jsp-raknet writes a malformed handshake packet when given a hostname, so use the IP.
+  // jsp-raknet sends a broken handshake packet if you give it a hostname, so look up the IP first.
   const ip = (await require('dns').promises.lookup(HOST, { family: 4 })).address;
   log(`server ${HOST} -> ${ip}:${PORT}`);
-  const bedrock = require('bedrock-protocol'); // lazy so the API/console work without it
+  const bedrock = require('bedrock-protocol'); // loaded here so the console and website still work if it's missing
   client = bedrock.createClient({
     host: ip, port: PORT, username: process.env.XBOX_ACCOUNT || 'bot',
-    profilesFolder: './data/auth', offline: false, raknetBackend: backend, skipPing: backend === 'jsp-raknet', version: process.env.BEDROCK_VERSION || require('bedrock-protocol/src/options').CURRENT_VERSION, // DonutSMP is newer than the library; the newest known version is accepted
+    profilesFolder: './data/auth', offline: false, raknetBackend: backend, skipPing: backend === 'jsp-raknet', version: process.env.BEDROCK_VERSION || require('bedrock-protocol/src/options').CURRENT_VERSION, // the server is newer than the library, but it accepts the newest version the library knows
     ...authOptions(),
     connectTimeout: 20000,
     conLog: (m) => log('net: ' + m),
@@ -101,7 +100,7 @@ async function connect() {
 // ---- trading ----
 let busy = false;
 function pause(why) { if (!state.paused) { state.paused = why; log('BUYING PAUSED: ' + why + ' (type resume to continue)'); } }
-// Chat hints: an auction-house-full message pauses buying; a sale frees a slot.
+// Chat hints: a "full" message pauses buying, a sale frees up a slot.
 function watchChat(msg) {
   state.recentChat.push({ t: Date.now(), msg }); state.recentChat = state.recentChat.slice(-50);
   const sale = /bought your (.+?) for \$\s*([\d,\.]+\s*[kmb]?)\b/i.exec(msg);
@@ -118,13 +117,13 @@ async function scan() {
   busy = true;
   try {
     const hits = [];
-    if (!KEY) { // no API key: read the auction house in game
+    if (!KEY) { // no API key, so read the auction house in game
       if (!state.connected) return [];
       for (const r of rules.list()) {
         const win = await ah.open('/ah ' + r.item.replace(/_/g, ' '));
         for (const [slot, it] of win.slots) {
           if (!it || !it.network_id) continue;
-          if (clean(ah.nameOf(it)) !== r.item || ah.enchanted(it)) continue; // only the exact, un-enchanted item
+          if (clean(ah.nameOf(it)) !== r.item || ah.enchanted(it)) continue; // only the exact item, not enchanted
           const price = ah.priceOf(it), count = it.count || 1;
           const l = { item: r.item, price, count }, m = price > 0 && rules.matches(l);
           if (m) hits.push({ ...l, unit: m.unit, rule: r, slot });
@@ -153,7 +152,7 @@ async function scan() {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function waitFor(pred, ms) { const end = Date.now() + ms; while (Date.now() < end) { const v = pred(); if (v) return v; await sleep(100); } return null; }
 
-// Read the balance by running /bal and parsing "You have $ 1,478,100".
+// Gets the balance by running /bal and reading "You have $ 1,478,100".
 async function balance() {
   const since = Date.now();
   ah.say('/bal');
@@ -163,9 +162,9 @@ async function balance() {
   return v;
 }
 
-// Buy the cheapest plain `item` listing at or under maxUnit per item. Two clicks: the listing, then Confirm.
+// Buys the cheapest plain listing of `item` at or under maxUnit each. Two clicks: the listing, then Confirm.
 async function purchase(item, maxUnit) {
-  const balP = balance();              // ask for the balance at the same time as opening the AH (saves ~2s)
+  const balP = balance();              // ask for the balance while the AH opens, saves a couple of seconds
   const win = await ah.open('/ah ' + item.replace(/_/g, ' '));
   const cands = [...win.slots].filter(([, it]) => it && it.network_id && clean(ah.nameOf(it)) === item && !ah.enchanted(it))
     .map(([slot, it]) => ({ slot, it, price: ah.priceOf(it), count: it.count || 1 }))
@@ -173,14 +172,14 @@ async function purchase(item, maxUnit) {
     .sort((x, y) => x.price / x.count - y.price / y.count);
   if (!cands.length) { ah.close(); await balP; return { ok: false, why: 'no listing at or under ' + maxUnit + ' (gone, or sold to someone else)' } };
   const c = cands[0];
-  const before = await balP;            // its reply has normally arrived while the window opened
+  const before = await balP;            // the reply has usually arrived by now
   const inv0 = ah.snapshot();
   ah.other.clear();
   log(`clicking listing: slot ${c.slot}, ${c.price} for ${c.count}`);
-  ah.clickItem(c.it, c.slot);           // the exact item we picked, not a fresh lookup
+  ah.clickItem(c.it, c.slot);           // click the exact item we picked, don't look it up again
   const menu = await waitFor(() => ah.confirmMenu(), 4000);
   if (!menu) { ah.close(); return { ok: false, why: 'no confirm menu appeared', events: ah.events.slice(-8) }; }
-  // Make sure the menu shows the listing we meant to buy before confirming.
+  // before confirming, check the menu really shows the listing we meant to buy
   const shownPrice = menu.shown ? ah.priceOf(menu.shown.item) : NaN, shownName = menu.shown ? clean(ah.nameOf(menu.shown.item)) : '';
   if (shownName !== item || !(shownPrice > 0) || shownPrice / c.count > maxUnit * 1.001) {
     ah.clickItem(menu.cancel.item, menu.cancel.slot);
@@ -201,14 +200,14 @@ async function purchase(item, maxUnit) {
   return { ok, spent: isNaN(spent) ? 'unknown' : spent, price: shownPrice, tradeId, balanceBefore: before, balanceAfter: after, inventorySlot: ah.newSlot(inv0), chat };
 }
 
-// Put the item from a hotbar slot in hand and list it: /ah sell <price>. Clicks Confirm if the server asks.
+// Holds the item from a hotbar slot and lists it with /ah sell <price>, clicking Confirm if the server asks.
 async function relist(slot, price) {
   ah.select(slot);
   await sleep(600);
   ah.other.clear(); ah.win = null;
   const since = Date.now();
   ah.say('/ah sell ' + price);
-  // The server answers with a window (a sell menu). Click Confirm if we can find it.
+  // the server answers with a sell menu, click Confirm once we find it
   const menu = await waitFor(() => ah.confirmMenu(), 4000);
   let confirmed = false, windowSeen = null;
   if (menu) { ah.clickItem(menu.confirm.item, menu.confirm.slot); confirmed = true; }
@@ -234,7 +233,7 @@ async function buy(h) {
     state.listed++;
     if (state.maxListings && state.listed >= state.maxListings) pause('listing limit reached (' + state.listed + '/' + state.maxListings + ')');
     const slot = r.inventorySlot, held = slot != null ? ah.inv.get(slot) : null;
-    const price = rules.sellPrice(h.item, r.price / h.count, held ? held.count : h.count); // /ah sell lists the whole stack in hand
+    const price = rules.sellPrice(h.item, r.price / h.count, held ? held.count : h.count); // /ah sell lists the whole stack in hand, so price by what we hold
     if (slot === null || slot === undefined) { log('bought, but could not find the item in the inventory; relist by hand'); return; }
     const rl = await relist(slot, price);
     log('relist result: ' + JSON.stringify(rl));
@@ -274,18 +273,18 @@ async function runInner(line) {
     case 'trades': { const S = ledger.summary(); return { file: 'data/profit-vs-cost.xlsx', csv: 'data/trades.csv', trades: ledger.d.trades.length, spent: S.spent, realizedProfit: S.realized, sold: S.sold, listed: S.listed, fee: ledger.d.fee }; }
     case 'fee': ledger.d.fee = Math.max(0, (+a[0] || 0) / 100); ledger.save(); return { fee: ledger.d.fee };
     case 'inv': return [...ah.inv].map(([slot, it]) => ({ slot, network_id: it.network_id, count: it.count, name: ah.nameOf(it) }));
-    case 'sellnow': { // sellnow <hotbarSlot> <price> yes : hold that slot's item and run /ah sell <price>
+    case 'sellnow': { // sellnow <hotbarSlot> <price> yes: holds that slot's item and runs /ah sell <price>
       if (!state.connected) return 'not connected yet';
       if (a[a.length - 1] !== 'yes' || a.length < 3) return 'This LISTS an item for sale. Type: sellnow <hotbarSlot 0-8> <price> yes  (see slots with: inv)';
       return relist(+a[0], a[1]);
     }
-    case 'buynow': { // buynow <item> <maxPrice> yes : really buys the cheapest plain listing at or under maxPrice per item
+    case 'buynow': { // buynow <item> <maxPrice> yes: really buys the cheapest plain listing at or under maxPrice each
       if (!state.connected) return 'not connected yet';
       if (a[a.length - 1] !== 'yes') return 'This REALLY buys. Type: buynow <item> <maxPrice> yes';
       const b = parseBuy(a.slice(0, 2));
       return purchase(clean(b.item), b.maxPrice);
     }
-    case 'inspectbuy': { // inspectbuy <item> yes: clicks the cheapest listing. WITH "no confirmation" ON IN-GAME THIS BUYS IT.
+    case 'inspectbuy': { // inspectbuy <item> yes: clicks the cheapest listing. If "no confirmation" is on in your AH settings, this BUYS it.
       if (!state.connected) return 'not connected yet';
       if (a[a.length - 1] !== 'yes') return 'This clicks the cheapest listing, which BUYS it if "no confirmation" is on in your AH settings. Type: inspectbuy <item> yes';
       const item = clean(a.filter((x) => x !== 'yes').join(' ') || 'diamond');
@@ -301,7 +300,7 @@ async function runInner(line) {
       ah.close();
       return out;
     }
-    case 'peek': { // peek <item>: show the raw text of the first listings so prices can be checked
+    case 'peek': { // peek <item>: prints the first few listings with their parsed prices, good for checking the price reading
       if (!state.connected) return 'not connected yet';
       const win = await ah.open('/ah ' + (a.join(' ') || 'diamond'));
       const rows = [...win.slots].filter(([, it]) => it && it.network_id).slice(0, 12)
@@ -315,9 +314,8 @@ async function runInner(line) {
   }
 }
 
-// ---- HTTP API (CORS open, for your future live-price website) ----
 // ---- price board scanners ----
-// In-game: search each watched item in /ah (sorted cheapest first) and record the plain listings it shows.
+// In game: search each watched item in /ah (cheapest first) and record the plain listings it shows.
 async function marketGuiLoop() {
   for (;;) {
     if (!market.on || !state.connected) { await sleep(2000); continue; }
@@ -344,7 +342,7 @@ async function marketGuiLoop() {
     market.passes++; market.current = null; market.save();
   }
 }
-// API key set: read many pages of the official listings endpoint at once (a sample of the whole market).
+// With an API key: read a bunch of pages from the official listings endpoint (a sample of the whole market).
 async function marketApiLoop() {
   const pages = +process.env.PAGES || 10, every = +process.env.MARKET_API_MS || 60000;
   for (;;) {
@@ -363,10 +361,11 @@ async function marketApiLoop() {
   }
 }
 
-const PUBLIC_READ = /^\/(market|prices)(\/|$)/;   // read-only price data may be fetched from other websites
+// ---- website + API ----
+const PUBLIC_READ = /^\/(market|prices)(\/|$)/;   // price data is read-only, so other websites may fetch it
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
-  if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) { res.writeHead(403); return res.end('forbidden host'); } // blocks DNS-rebinding
+  if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) { res.writeHead(403); return res.end('forbidden host'); } // stops DNS-rebinding tricks
   const send = (o, c = 200) => {
     const h = { 'content-type': 'application/json' };
     if (PUBLIC_READ.test(u.pathname)) h['access-control-allow-origin'] = '*';
@@ -389,7 +388,7 @@ http.createServer(async (req, res) => {
       return send({ summary: { spent: S.spent, realizedProfit: S.realized, costListed: S.costListed, expectedRevenue: S.revListed, sold: S.sold, listed: S.listed, fee: ledger.d.fee }, trades: ledger.d.trades.slice(-100).reverse() });
     }
     if (u.pathname === '/command' && req.method === 'POST') {
-      // Commands can spend money: only the bot's own page (or curl) may send them, never another website.
+      // Commands can spend money, so only the bot's own page (or curl) may send them, never some other website.
       const origin = req.headers.origin;
       const okOrigin = !origin || /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
       if (!okOrigin || req.headers['x-bot'] !== '1') return send({ error: 'forbidden: commands only from the bot page (send header X-Bot: 1)' }, 403);

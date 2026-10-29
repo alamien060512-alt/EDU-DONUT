@@ -1,4 +1,4 @@
-// Usage: npm run pinghandshake [host] [port]   -> asks the server for its Bedrock status.
+// Usage: npm run pinghandshake [host] [port]. Asks the server for its Bedrock status.
 const dgram = require('dgram');
 const host = process.argv[2] || process.env.SERVER_HOST || 'donutsmp.net';
 const port = +(process.argv[3] || process.env.SERVER_PORT || 19132);
@@ -18,7 +18,7 @@ var t = setInterval(() => {
   send();
 }, 2000);
 
-// ---- handshake probe: same first packet the bot sends, at several MTU sizes ----
+// ---- handshake probe: sends the same first packet the bot sends, at a few different sizes ----
 const probe = dgram.createSocket('udp4');
 const names = { 0x06: 'OpenConnectionReply1 (OK)', 0x19: 'IncompatibleProtocolVersion', 0x14: 'NoFreeIncomingConnections', 0x17: 'ConnectionBanned' };
 const seen = {}; let curMtu = 0;

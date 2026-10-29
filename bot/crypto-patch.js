@@ -1,7 +1,7 @@
-// Decrypt each received packet with one direct cipher.update() call instead of the Node
-// stream bedrock-protocol uses. The stock code assumes the stream emits exactly one 'data'
-// event per write; if a runtime splits or merges chunks (big packets), the checksum is read
-// from the wrong place and the connection dies with "Checksum mismatch".
+// bedrock-protocol decrypts through a Node stream and assumes every write comes back out as exactly one
+// 'data' event. If the runtime splits or merges chunks on big packets, the checksum gets read from the
+// wrong spot and the connection dies with "Checksum mismatch". So here each packet is decrypted with a
+// single cipher.update() call, which can't get split.
 const crypto = require('crypto');
 const Zlib = require('zlib');
 const enc = require('bedrock-protocol/src/transforms/encryption');

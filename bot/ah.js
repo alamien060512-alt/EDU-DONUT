@@ -1,21 +1,20 @@
-// Auction-house driver over Bedrock (Geyser). The Java chest GUI shows up as a
-// container: container_open -> inventory_content/slot, and clicks are
-// item_stack_request actions that must quote the server's stack ids.
-// UNTESTED against the live server: run with `dry` on first and watch `log`.
+// Drives the auction house over Bedrock. DonutSMP runs Geyser, so the Java chest menus show up here as
+// containers: the server sends container_open and inventory_content, and to click something we send an
+// item_stack_request that quotes the item's stack id.
 const { clean } = require('./strategy');
 
 class AhDriver {
   constructor(client, log) {
     this.c = client; this.log = log;
-    this.win = null;          // { id, type, slots: Map<slot,item> }
-    this.reqId = -1;          // item_stack_request ids are negative and decrease
+    this.win = null;          // the window we have open: { id, type, slots }
+    this.reqId = -1;          // request ids go negative and count down, that's what the protocol wants
     this.waiters = [];
-    this.events = [];         // recent window events, shown by inspectbuy / on timeout
+    this.events = [];         // last few window events, printed by inspectbuy and when a window times out
     const ev = (e, extra) => { this.events.push(`${new Date().toISOString().slice(14, 23)} ${e} ${extra || ''}`.trim()); this.events = this.events.slice(-25); };
-    this.sentClose = new Map(); // window id -> when we last sent a close, to avoid close ping-pong
-    this.other = new Map();   // contents of windows we did not open ourselves (e.g. a confirm menu)
+    this.sentClose = new Map(); // when we last sent a close for each window, so we don't answer our own echo
+    this.other = new Map();   // windows the server opened on us (like the confirm menu), we never asked for these
     this.pkts = {};
-    this.timeline = [];       // every non-noisy packet with a short summary, for diagnosing a failed step
+    this.timeline = [];       // short log of the interesting packets, handy when a step fails
     const noisyName = /chunk|entity|time|latency|attributes|level_|sound|move_|block|biome|score|player_list|add_player|animate|actor|tick|particle|event|camera|health|mob_|network_stack|set_title|update_soft_enum|available_commands|commands/;
     client.on('packet', (d) => {
       const n = d && d.data && d.data.name; if (!n) return;
@@ -37,12 +36,12 @@ class AhDriver {
       if (!this.other.has(id)) this.other.set(id, new Map());
       this.other.get(id).set(slot, it);
     };
-    this.selected = 0;        // hotbar slot in hand (a new Bedrock player starts on slot 0)
+    this.selected = 0;        // which hotbar slot is in hand (new players start on slot 0)
     client.on('player_hotbar', (p) => { if (p.select_slot !== false && typeof p.selected_slot === 'number') this.selected = p.selected_slot; });
-    this.inv = new Map();     // our own inventory: slot -> item (slots 0-8 are the hotbar)
+    this.inv = new Map();     // our own inventory, slot -> item. Slots 0-8 are the hotbar
     client.on('inventory_content', (p) => { if (p.window_id === 'inventory') { this.inv.clear(); (p.input || []).forEach((it, i) => { if (it && it.network_id) this.inv.set(i, it); }); } });
     client.on('inventory_slot', (p) => { if (p.window_id === 'inventory') { if (p.item && p.item.network_id) this.inv.set(p.slot, p.item); else this.inv.delete(p.slot); } });
-    this.responses = [];      // item_stack_response statuses, for inspection
+    this.responses = [];      // item_stack_response statuses, just for debugging
     client.on('item_stack_response', (p) => { ev('item_stack_response', (p.responses || []).map((r) => r.status).join(',')); for (const r of p.responses || []) this.responses.push({ status: r.status, id: r.request_id }); });
     client.on('container_open', (p) => {
       ev('container_open', `id=${p.window_id} type=${p.window_type}`);
@@ -50,9 +49,9 @@ class AhDriver {
       this._wake();
     });
     client.on('container_close', (p) => {
-      // A real client answers a server-side close; otherwise the server may think a menu is still open.
+      // A real client answers when the server closes a window. If we don't, the server can think the menu is still open.
       const mine = this.sentClose.get(p.window_id);
-      if (!(mine && Date.now() - mine < 3000)) {           // don't answer the echo of a close we just sent
+      if (!(mine && Date.now() - mine < 3000)) {           // skip it if this is just the echo of a close we sent
         try { client.queue('container_close', { window_id: p.window_id, window_type: p.window_type, server: false }); this.sentClose.set(p.window_id, Date.now()); } catch {}
       }
       this.other.delete(p.window_id);
@@ -88,7 +87,7 @@ class AhDriver {
   async open(cmd = '/ah', tries = 3) {
     let last = '';
     for (let i = 1; i <= tries; i++) {
-      this.closeAll();            // tell the server to drop any window we may still hold
+      this.closeAll();            // make sure the server has nothing of ours left open
       this.win = null; this.events.push('-- open ' + cmd + (i > 1 ? ' (retry ' + i + ')' : ''));
       const mark = this.timeline.length;
       await new Promise((r) => setTimeout(r, i === 1 ? 400 : 2000 * i));
@@ -99,7 +98,7 @@ class AhDriver {
     throw new Error('timeout waiting for the window after ' + tries + ' tries. Server said: ' + last);
   }
   nameOf(it) { return clean(it && (it.network_id ? it.__name || it.name : '') || ''); }
-  // Click an item in a chest-style window (Java left-click = Bedrock "take" into the cursor).
+  // Click an item in a chest-style window. A Java left click is a "take into cursor" on Bedrock.
   clickItem(it, slot, count) {
     const id = this.reqId; this.reqId -= 2;
     this.c.queue('item_stack_request', { requests: [{
@@ -111,9 +110,10 @@ class AhDriver {
     }] });
   }
   click(slot, count) { this.clickItem(this.win.slots.get(slot), slot, count); }
-  // The confirm menu the server opens after a listing click: { id, confirm:{slot,item}, cancel:{slot,item}, shown:{slot,item} }.
+  // After you click a listing the server opens a confirm menu. This finds it and returns the Confirm and Cancel
+  // buttons plus the item it shows: { id, confirm:{slot,item}, cancel:{slot,item}, shown:{slot,item} }.
   confirmMenu() {
-    // Look in our own window ("first") as well as any extra windows.
+    // check our own window ("first") and any extra windows
     const wins = [];
     if (this.win) wins.push([this.win.id, this.win.slots]);
     for (const [id, slots] of this.other) wins.push([id, slots]);
@@ -127,7 +127,7 @@ class AhDriver {
     }
     return null;
   }
-  // Item NBT as a plain object: { display: { Name, Lore: [...] }, ench: [...] }, or {}.
+  // The item's NBT as a plain object ({ display: { Name, Lore }, ench }), or {} if it has none.
   plain(it) {
     try {
       const nbt = it && (it.extra && it.extra.nbt || it.nbt);
@@ -135,19 +135,19 @@ class AhDriver {
       return require('prismarine-nbt').simplify(nbt.nbt || nbt) || {};
     } catch { return {}; }
   }
-  // Display name, colour codes removed ('' when the item has none).
+  // The item's display name without colour codes ('' if it has no name).
   nameOf(it) {
     const d = this.plain(it).display || {};
     return String(d.Name || '').replace(/§./g, '').trim();
   }
   enchanted(it) { const p = this.plain(it); return !!((p.ench && p.ench.length) || (p.Enchantments && p.Enchantments.length)); }
-  // Name + lore lines as text, colour codes removed.
+  // Name plus lore lines as plain text.
   textOf(it) {
     const d = this.plain(it).display || {};
     const lore = Array.isArray(d.Lore) ? d.Lore : (d.Lore ? [d.Lore] : []);
     return [d.Name, ...lore].filter(Boolean).map((x) => String(x).replace(/§./g, '').trim());
   }
-  // Price per listing: the first lore line that mentions "price" (or a $ amount) and has a number.
+  // Reads the price off the item: the first lore line that mentions "price" (or has a $ amount) with a number in it.
   priceOf(it) {
     const lines = this.textOf(it);
     const line = lines.find((l) => /price/i.test(l) && /\d/.test(l)) || lines.find((l) => /\$\s*[\d]/.test(l));
@@ -156,29 +156,29 @@ class AhDriver {
     if (!m) return NaN;
     return parseFloat(m[1].replace(/,/g, '')) * ({ '': 1, k: 1e3, m: 1e6, b: 1e9 })[m[2].toLowerCase()];
   }
-  // Describe the open window: id, type and every non-empty slot (name, count, text).
+  // Quick summary of the open window: id, type and every filled slot.
   describe() {
     if (!this.win) return { window: null };
     const items = [...this.win.slots].filter(([, it]) => it && it.network_id)
       .map(([slot, it]) => ({ slot, name: this.nameOf(it), count: it.count, text: this.textOf(it).join(' | ').slice(0, 160) }));
     return { window: { id: this.win.id, type: this.win.type, slots: this.win.slots.size }, items };
   }
-  // slot -> "network_id x count": compare two snapshots to find where a bought item landed.
+  // Turns the inventory into slot -> "id x count". Compare two of these to see where a bought item went.
   snapshot() { return new Map([...this.inv].map(([sl, it]) => [sl, `${it.network_id}x${it.count}`])); }
   newSlot(before) {
     for (const [sl, v] of this.snapshot()) if (before.get(sl) !== v) return sl;
     return null;
   }
-  // Put a hotbar item in hand (Bedrock mob_equipment). Items outside the hotbar can't be selected.
+  // Put a hotbar item in hand. Only hotbar slots work, anything else throws.
   select(slot) {
     const it = this.inv.get(slot);
     if (!it) throw new Error('nothing in inventory slot ' + slot);
     if (slot > 8) throw new Error('item is in main-inventory slot ' + slot + ', not the hotbar (0-8)');
-    if (slot === this.selected) return;   // already in hand; send nothing
+    if (slot === this.selected) return;   // already in hand, nothing to send
     this.c.queue('mob_equipment', { runtime_entity_id: this.c.entityId, item: it, slot, selected_slot: slot, window_id: 'inventory' });
     this.selected = slot;
   }
-  // Items of every extra window seen, with their slot numbers.
+  // What's in the extra windows we've seen, with slot numbers.
   describeOthers() {
     const out = {};
     for (const [id, slots] of this.other) {
@@ -187,12 +187,12 @@ class AhDriver {
     }
     return out;
   }
-  // Packet counts since the last reset, without the noisy world/entity ones.
+  // Packet counts since the last reset, leaving out the noisy world and entity ones.
   interestingPackets() {
     const noisy = /chunk|entity|time|latency|attributes|level_|sound|move_|block|biome|score|player_list|add_player|animate|actor|tick|particle|event|camera|health|mob_/;
     return Object.fromEntries(Object.entries(this.pkts).filter(([n]) => !noisy.test(n)));
   }
-  // Close one window by id (e.g. a confirm menu); safe to call for an id the server already closed.
+  // Close one window by id (a confirm menu, say). Harmless if the server already closed it.
   closeWindow(id) {
     try { this.c.queue('container_close', { window_id: id, window_type: 'container', server: false }); this.sentClose.set(id, Date.now()); } catch {}
     this.other.delete(id);

@@ -1,4 +1,4 @@
-// Offline check: library encryptor -> our decryptor, incl. very large batches.
+// Offline test: the library's encryptor -> our decryptor, including very big batches.
 require('./crypto-patch');
 const assert = require('assert'), crypto = require('crypto');
 const enc = require('bedrock-protocol/src/transforms/encryption');

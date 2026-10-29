@@ -1,7 +1,7 @@
-// Trade ledger: every buy / relist / sale the bot sees is saved and the spreadsheet is rebuilt.
-//   data/trades.json            the raw ledger (source of truth)
-//   data/trades.csv             plain copy, never locked by Excel
-//   data/profit-vs-cost.xlsx    Summary + Trades sheets with live formulas (rebuilt after every change)
+// The trade ledger. Every buy, relist and sale the bot sees is saved here and the spreadsheet is rebuilt.
+//   data/trades.json            the real ledger, everything else comes from this
+//   data/trades.csv             plain copy (Excel can't lock this one)
+//   data/profit-vs-cost.xlsx    Summary + Trades sheets with live formulas, rebuilt after every change
 const fs = require('fs');
 const path = require('path');
 const { clean } = require('./strategy');
@@ -12,7 +12,7 @@ const CSV_FILE = path.join(DIR, 'trades.csv');
 const XLSX_FILE = path.join(DIR, 'profit-vs-cost.xlsx');
 const MAX_ROWS = 500;
 
-const norm = (n) => clean(n).replace(/s$/, '');          // "Diamonds" == "diamond"
+const norm = (n) => clean(n).replace(/s$/, '');          // so "Diamonds" matches "diamond"
 const sameItem = (a, b) => norm(a) === norm(b);
 
 class Ledger {
@@ -21,7 +21,7 @@ class Ledger {
     this.busy = false; this.dirty = false;
     this.d = { fee: 0, startBalance: null, lastBalance: null, nextId: 1, trades: [] };
     try { fs.mkdirSync(DIR, { recursive: true }); } catch {}
-    try { this.d = { ...this.d, ...JSON.parse(fs.readFileSync(JSON_FILE, 'utf8')) }; } catch {}   // first run: starts empty
+    try { this.d = { ...this.d, ...JSON.parse(fs.readFileSync(JSON_FILE, 'utf8')) }; } catch {}   // first run: nothing on disk yet, start empty
   }
   // ---- recording ----
   balance(n) { if (n > 0) { this.d.lastBalance = n; this.save(); } }
@@ -35,13 +35,13 @@ class Ledger {
     const t = this.d.trades.find((x) => x.id === id);
     if (t) { t.listPrice = listPrice; t.status = 'Listed'; this.save(); }
   }
-  // "<buyer> bought your Diamond for $15K": mark the closest-priced listing of that item as sold.
+  // Chat says "<buyer> bought your Diamond for $15K". Find the open listing closest to that price and mark it sold.
   markSold(item, price) {
     const open = this.d.trades.filter((t) => t.status === 'Listed' && sameItem(t.item, item));
     if (!open.length) return false;
     open.sort((a, b) => Math.abs(a.listPrice - price) - Math.abs(b.listPrice - price) || a.id - b.id);
     const t = open[0];
-    if (Math.abs(t.listPrice - price) > Math.max(price * 0.02, 100)) return false; // price differs too much: not ours
+    if (Math.abs(t.listPrice - price) > Math.max(price * 0.02, 100)) return false; // too far from any of our listings, probably not ours
     t.status = 'Sold'; t.soldAt = new Date().toISOString(); this.save();
     return true;
   }
@@ -63,7 +63,7 @@ class Ledger {
       this.log(e.code === 'MODULE_NOT_FOUND' ? 'spreadsheet skipped: run  npm install  once (CSV is still written)' : 'spreadsheet not updated (is it open in Excel? close it): ' + e.message);
     } finally { this.busy = false; }
   }
-  // Pure numbers for the Summary, so the file also carries cached values.
+  // The Summary numbers, worked out here too so the file already has values in it before Excel recalculates.
   summary() {
     const fee = this.d.fee || 0, T = this.d.trades.filter((t) => t.listPrice != null);
     const sum = (f) => T.reduce((a, t) => a + f(t), 0);
@@ -145,7 +145,7 @@ class Ledger {
       a.value = label; a.font = font(); a.border = box;
       b.value = { formula, result }; b.numFmt = nf; b.border = box; b.font = font({ bold: /^(Realized profit|Total profit)/.test(label) });
     });
-    // balance check
+    // check our numbers against the real /bal readings
     const sb = this.d.startBalance, lb = this.d.lastBalance;
     ws.getCell('A20').value = 'Balance check (from /bal readings)'; ws.getCell('A20').font = font({ bold: true });
     const chk = [
