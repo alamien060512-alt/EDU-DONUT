@@ -17,6 +17,7 @@ writes an XLSX trade log.
 - [x] Bot performs automatic actions (finds a listing, buys it, relists it)
 - [x] Bot creates an XLSX file (trade log with profit vs cost, rebuilt after every trade)
 - [x] Local price website (prices, history charts, rules)
+- [x] Safe remote access (password login, view-only by default, works over Tailscale or a Cloudflare Tunnel)
 
 ## Quick start
 
@@ -50,8 +51,9 @@ without connecting to any server.
 ## Privacy and safety
 
 - The `data/` folder holds your **Xbox login tokens**. Never share it, and never commit it. It is already in `.gitignore`.
-- The website and API only listen on your own computer (127.0.0.1), and sending commands to the API requires
-  a header that other websites cannot add.
+- The website and API only listen on your own computer (127.0.0.1) unless you set a password to use them remotely
+  (see [HOW-TO-USE.md](HOW-TO-USE.md), section 9). Remote use is view-only by default, and sending commands to the API
+  requires a header that other websites cannot add.
 - Live trading spends real in-game money. Start with small limits.
 
 ## Credits and licence

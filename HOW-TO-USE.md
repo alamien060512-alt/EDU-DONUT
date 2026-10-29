@@ -156,14 +156,63 @@ While the bot runs, open **<http://127.0.0.1:8080>** in your browser.
 
 The bot searches each watched item in `/ah` (about 70 by default, one every 7 seconds). With
 `DONUTSMP_API_KEY` set (get one in game with `/api`) it reads many pages of the official listings instead,
-which covers more items. The site only works while the bot runs and only on your computer.
+which covers more items. The site only works while the bot runs. By default only your own computer can open it; to use it from your phone away
+from home see section 9.
 
 Other pages: `/market`, `/market/<item>`, `/trades`, `/status`, `/rules`, `/log`, `/holdings`, `/prices`.
 Sending commands to `POST /command` needs the header `X-Bot: 1`.
 
 ---
 
-## 9. Settings (environment variables)
+## 9. Use it away from home (phone, mobile data)
+
+The bot and the website run on your PC, so the PC must stay on with the bot running. The bot's own connection to
+the game does not care where **you** are; only the website needs a way to be reached from outside.
+**Never port-forward the bot on your router.** The bot can spend money, so it must not be open to the whole internet.
+Use one of these two safe ways:
+
+**Option A: Tailscale (recommended, free and private)**
+
+1. Install Tailscale on the PC and on your phone (<https://tailscale.com>) and sign in to the same account on both.
+2. On the PC run `tailscale ip -4`. It prints an address like `100.64.1.2`.
+3. Start the bot with a password and that address. Windows Command Prompt:
+
+```
+set BOT_HOST=100.64.1.2
+set BOT_PASSWORD=choose-a-long-unique-password
+npm run bot
+```
+
+4. On the phone (Tailscale switched on) open `http://100.64.1.2:8080` and log in.
+
+Only devices on your own Tailscale account can even reach that address, and the traffic is encrypted.
+
+**Option B: Cloudflare Tunnel (a normal https link)**
+
+```
+set BOT_PASSWORD=choose-a-long-unique-password
+npm run bot
+```
+
+In a second Command Prompt window run `cloudflared tunnel --url http://127.0.0.1:8080` (install
+[cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) first). It prints an
+`https://something.trycloudflare.com` link; open it on your phone and log in. Anyone who has the link sees the login page,
+so use a long unique password and close the tunnel when you are not using it.
+
+**How it is protected**
+
+- The bot **refuses to open beyond this computer without `BOT_PASSWORD`** (8 or more characters).
+- With a password set, every page and API call needs a login. After 5 wrong passwords an address is locked out for 10 minutes.
+- The login cookie is `HttpOnly` and `SameSite=Strict`. Sessions last 7 days and end when the bot restarts.
+- **View only by default:** from the website you can look at prices, history and trades, but not send commands.
+  Set `BOT_REMOTE_CONTROL=1` to allow rules and scanning from the website. Leave it off unless you need it: with it on,
+  anyone who learns your password can change your rules or start trading. Live mode itself is switched on at the PC.
+- Without a password the bot only answers on the PC and refuses anything that arrives through a tunnel or proxy.
+
+**Running the bot while the PC is off:** run it on an always-on machine such as a small cloud server instead. The steps are the
+same (install Node, `git clone`, `npm install`, set the variables, `npm run bot`), and keep the password long.
+
+## 10. Settings (environment variables)
 
 Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `NAME=value npm run bot`.
 
@@ -178,8 +227,12 @@ Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `
 | `PAGES` | 10 | API pages per price pass |
 | `SERVER_HOST`, `SERVER_PORT` | donutsmp.net, 19132 | server address |
 | `BOT_API_PORT` | 8080 | website/API port |
+| `BOT_HOST` | 127.0.0.1 | address the website listens on (needs `BOT_PASSWORD` if it is not this computer) |
+| `BOT_PASSWORD` | none | turns on the login (8+ characters); needed for remote use |
+| `BOT_REMOTE_CONTROL=1` | off | let logged-in website users send commands (default is view only) |
+| `BOT_COOKIE_SECURE=1` | off | mark the login cookie `Secure` (set it if you serve the site over https yourself) |
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 | You see | What to do |
 |---|---|
@@ -189,17 +242,19 @@ Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `
 | `scan failed ... timeout waiting for the window` | the server did not open `/ah`; the bot retries; if it keeps happening, `pause` for a minute |
 | `no confirm menu appeared` | the listing was sold or the click was refused; the bot cancels safely |
 | `spreadsheet not updated` | close `profit-vs-cost.xlsx` in Excel |
+| `forbidden: this bot has no password` in the browser | you reached the bot through a tunnel or proxy; set `BOT_PASSWORD` first |
+| "view only" badge, buttons greyed out | remote control is off; start the bot with `BOT_REMOTE_CONTROL=1` if you really want it |
 | Website says "Cannot reach the bot" | the bot is not running, or open <http://127.0.0.1:8080> |
 | `sendto failed ... length 1464` | harmless network warning |
 | Listings count wrong after restart | run `listed <n>` with your real number |
 
-## 11. Privacy
+## 12. Privacy
 
 The `data` folder inside the bot folder holds your **Xbox login tokens** (`data/auth`), your trades and your
 price history. Never share it or upload it (it is in `.gitignore`, so `git add .` skips it). To log out,
 delete `data/auth`.
 
-## 12. Files
+## 13. Files
 
 | File | Purpose |
 |---|---|
@@ -208,6 +263,7 @@ delete `data/auth`.
 | `bot/strategy.js` | buy rules and price parsing |
 | `bot/ledger.js` | trade log and spreadsheet |
 | `bot/market.js` | price board and watchlist |
+| `bot/access.js` | website login, view-only mode and the rules for who may reach the bot |
 | `web/index.html` | the price website |
 | `bot/*-patch.js` | fixes for login and network libraries |
 | `npm test` | offline tests of the logic above |

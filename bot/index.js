@@ -7,6 +7,7 @@ const readline = require('readline');
 const { Rules, parseBuy, parsePrice, clean } = require('./strategy');
 const { Ledger } = require('./ledger');
 const { Market, Watchlist, pretty } = require('./market');
+const { Access } = require('./access');
 const fs = require('fs');
 const path = require('path');
 
@@ -27,6 +28,7 @@ const log = (m) => { const l = `${new Date().toISOString().slice(11, 19)} ${m}`;
 
 const ledger = new Ledger(log);
 const market = new Market(log);
+const access = new Access(process.env, log);
 const watch = new Watchlist();
 const MARKET_MS = +process.env.MARKET_MS || 7000;     // pause between in-game price searches (ms)
 // Only one auction-house job at a time. Trading, manual commands and the price scanner all share the same window.
@@ -365,10 +367,10 @@ async function marketApiLoop() {
 const PUBLIC_READ = /^\/(market|prices)(\/|$)/;   // price data is read-only, so other websites may fetch it
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
-  if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) { res.writeHead(403); return res.end('forbidden host'); } // stops DNS-rebinding tricks
+  if (await access.gate(req, res, u)) return;      // host checks, or the login when a password is set
   const send = (o, c = 200) => {
     const h = { 'content-type': 'application/json' };
-    if (PUBLIC_READ.test(u.pathname)) h['access-control-allow-origin'] = '*';
+    if (PUBLIC_READ.test(u.pathname) && !access.passwordMode) h['access-control-allow-origin'] = '*';
     res.writeHead(c, h); res.end(JSON.stringify(o));
   };
   try {
@@ -376,6 +378,7 @@ http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html')));
     }
+    if (u.pathname === '/session') return send({ auth: access.passwordMode, readOnly: !access.canControl() });
     if (u.pathname === '/status') return send({ connected: state.connected, live: state.live, spent: state.spent, listed: state.listed, maxListings: state.maxListings, paused: state.paused });
     if (u.pathname === '/rules') return send(rules.list());
     if (u.pathname === '/log') return send(state.log);
@@ -389,15 +392,14 @@ http.createServer(async (req, res) => {
     }
     if (u.pathname === '/command' && req.method === 'POST') {
       // Commands can spend money, so only the bot's own page (or curl) may send them, never some other website.
-      const origin = req.headers.origin;
-      const okOrigin = !origin || /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
-      if (!okOrigin || req.headers['x-bot'] !== '1') return send({ error: 'forbidden: commands only from the bot page (send header X-Bot: 1)' }, 403);
+      if (!access.sameOrigin(req) || req.headers['x-bot'] !== '1') return send({ error: 'forbidden: commands only from the bot page (send header X-Bot: 1)' }, 403);
+      if (!access.canControl()) return send({ error: 'view only: start the bot with BOT_REMOTE_CONTROL=1 to send commands from the website' }, 403);
       let b = ''; for await (const d of req) b += d;
       return send({ result: await run(JSON.parse(b).command) });
     }
-    send({ error: 'not found', routes: ['/', '/market', '/market/<item>', '/trades', '/status', '/rules', '/log', '/holdings', '/prices', 'POST /command (header X-Bot: 1)'] }, 404);
+    send({ error: 'not found', routes: ['/', '/session', '/market', '/market/<item>', '/trades', '/status', '/rules', '/log', '/holdings', '/prices', 'POST /command (header X-Bot: 1)'] }, 404);
   } catch (e) { send({ error: e.message }, 400); }
-}).listen(API_PORT, '127.0.0.1', () => log(`Website + API on http://127.0.0.1:${API_PORT}`));
+}).listen(API_PORT, access.host, () => log(`Website + API on http://${access.host}:${API_PORT}` + (access.passwordMode ? ` (password protected, ${access.canControl() ? 'remote control ON' : 'view only'})` : '')));
 
 if (require.main === module) {
   if (!KEY) console.log('No API key: reading the auction house in game instead.');

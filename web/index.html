@@ -36,6 +36,8 @@ button{cursor:pointer}
 .btn:hover{background:var(--soft)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 .btn.primary:hover{filter:brightness(1.05)}
+a.btn{display:inline-block;color:inherit;text-decoration:none}
+button:disabled,input:disabled{opacity:.5;cursor:not-allowed}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow)}
@@ -87,6 +89,8 @@ td small{color:var(--muted)}
     <span class="pill" id="botPill"><span class="dot"></span><span id="botText">connecting</span></span>
     <span class="spacer"></span>
     <button class="btn" id="scanBtn" type="button">Pause scanning</button>
+    <span class="pill" id="roPill" hidden title="Remote control is off on the PC">view only</span>
+    <a class="btn" id="logout" href="/logout" hidden>Log out</a>
     <button class="btn" id="themeBtn" type="button" aria-label="Toggle dark mode">Theme</button>
   </header>
 
@@ -143,7 +147,7 @@ td small{color:var(--muted)}
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
-const S = { items: [], status: {}, bot: {}, trades: null, rules: [], sel: null, sort: 'name', q: '', hist: null, msg: null };
+const S = { items: [], status: {}, bot: {}, trades: null, rules: [], sel: null, sort: 'name', q: '', hist: null, msg: null, session: { auth: false, readOnly: false } };
 const NS = 'http://www.w3.org/2000/svg';
 
 const fmt = (n) => {
@@ -177,6 +181,7 @@ async function cmd(command) {
 // ---------- data ----------
 async function refresh() {
   try {
+    S.session = await get('/session').catch(() => S.session);
     const [m, st, tr, rl] = await Promise.all([get('/market'), get('/status'), get('/trades').catch(() => null), get('/rules').catch(() => [])]);
     S.items = m.items; S.status = m.status; S.bot = st; S.trades = tr; S.rules = rl;
     $('banner').hidden = true;
@@ -213,6 +218,8 @@ function spark(vals, up) {
   svg.append(pl); return svg;
 }
 function render() {
+  $('logout').hidden = !S.session.auth; $('roPill').hidden = !S.session.readOnly;
+  for (const id of ['scanBtn', 'trackBtn', 'track']) $(id).disabled = S.session.readOnly;
   const b = S.bot, st = S.status, tr = S.trades && S.trades.summary;
   $('botPill').className = 'pill ' + (b.connected ? 'ok' : 'bad');
   $('botText').textContent = b.connected ? (b.live ? 'bot online · LIVE trading' : 'bot online · dry run') : 'bot not in game';
@@ -310,6 +317,7 @@ function renderDetail() {
     try { await cmd(`buy ${it.item} ${b} sell ${s2}`); say('Rule saved. The bot buys only when trading is live (live on).'); refresh(); } catch (err) { say('Failed: ' + err.message); }
   });
   del.addEventListener('click', async () => { try { await cmd('drop ' + it.item); say('Rule removed.'); refresh(); } catch (err) { say('Failed: ' + err.message); } });
+  if (S.session.readOnly) { f.querySelectorAll('input,button').forEach((x) => { x.disabled = true; }); msg.textContent = 'View only: remote control is switched off on the PC.'; }
   d.append(f);
 }
 function select(item) { S.sel = item; S.hist = null; renderDetail(); refresh(); if (matchMedia('(max-width:980px)').matches) $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' }); document.querySelectorAll('#rows tr').forEach((r) => r.classList.toggle('sel', r.dataset.item === item)); }
