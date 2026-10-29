@@ -127,6 +127,7 @@ Nothing was charged; this is normal for popular items.
 | `fee <percent>` | set a sale fee for the spreadsheet (default 0) |
 | `market on\|off` | start / stop the price scanner |
 | `orders` / `orders scan` / `orders on\|off` | status / read the order house now / start or stop the order reader |
+| `icons` | where the bot found the item pictures, and how many |
 | `peekorders` | print every tile of the `/orders` screen and how the bot read it (read-only) |
 | `watch`, `watch add <item>`, `watch remove <item>` | the list of items the price scanner tracks |
 | `quit` | exit |
@@ -166,21 +167,28 @@ from home see section 9.
 
 - Columns: top order price each, how many orders were seen, how many items buyers still want, the 24h change and a trend line.
   Click a row to open that item's market details, which also show its top buy order.
-- How it is collected: every 5 minutes the bot opens `/orders`, switches the sort to **Most Per Item** and reads the first
-  few pages. It is **read-only**: it only clicks the sort button and the next-page arrow, never an order.
+- Every item that has an order gets a row. When sorted by price the first pages are almost all the same few pricey items
+  (elytra...), so the bot reads **every page** of the order house and keeps the highest price it sees per item.
+- How it is collected: shortly after the bot joins, then every 30 minutes, it opens `/orders`, switches the sort to
+  **Most Per Item** and goes through all the pages (a minute or two; the tab shows "reading page N" while it works).
+  It is **read-only**: it only clicks the sort button and the next-page arrow, never an order. Trading waits while it reads.
+- Rows not seen in the latest full read for 2 hours are dimmed, because that order may be gone.
 - Commands: `orders scan` (read now), `orders on` / `orders off`, `orders` (status), and `peekorders` (prints every tile on
   the order screen and what the bot understood from it).
 - **First time:** the order screen's layout was copied from how the Java client reads it, and I could not test it on the
   live Bedrock server. Start the bot, run `peekorders`, and check that orders show a `"order": { "unit": ... }` price. If
   they do not, send me the output and I will adjust. The tab says "No order data yet" until the first read works.
-- Settings: `ORDERS=0` turns it off, `ORDERS_MS` (default 300000) is the time between reads, `ORDERS_PAGES` (default 5) the pages per read.
+- Settings: `ORDERS=0` turns it off, `ORDERS_MS` (default 1800000 = 30 min) is the time between full reads, `ORDERS_PAGES` (default 250) the most pages per read,
+  `ORDERS_SECONDS` (default 420) the longest one read may take. Run `orders scan` to read it now.
 
 **Item pictures.** The website can show a small picture next to every item name (Market, Top orders, portfolio, details). The
 pictures are made with [RenderChest](https://github.com/aternosorg/renderchest) from Minecraft's own assets, so they are
 Mojang's artwork: use them yourself, do not upload or share them (the `data` folder is git-ignored). There are two ways:
 
 1. **Unzip a ready-made pack** into the bot folder so that the pictures end up in `data\icons` (the file is
-   `minecraft-icons-26.3.zip`; right-click, Extract All, into the `EDU-DONUT` folder). Restart nothing: just refresh the page.
+   `minecraft-icons-26.3.zip`; right-click, Extract All, into the `EDU-DONUT` folder). Just refresh the page.
+   The bot looks a few folders down, so it also finds them if Windows put them in a `minecraft-icons-26.3` sub-folder.
+   Type `icons` in the terminal to see which folder it found. The website shows a hint until the pictures are found.
 2. **Make them yourself** (any Minecraft version, or with a resource pack) with `tools/make-icons.sh`. It needs PHP 8.1+ with the
    imagick extension, composer, git, curl, unzip and node, so on Windows run it inside WSL. It downloads the Minecraft client
    from Mojang, renders every item (about a minute) and fills `data/icons`:
@@ -313,8 +321,9 @@ Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `
 | `SERVER_HOST`, `SERVER_PORT` | donutsmp.net, 19132 | server address |
 | `BOT_API_PORT` | 8080 | website/API port |
 | `ORDERS=0` | on | turn the order-house reader off |
-| `ORDERS_MS` | 300000 | time between order-house reads (ms) |
-| `ORDERS_PAGES` | 5 | pages read per order-house read |
+| `ORDERS_MS` | 1800000 | time between full order-house reads (ms) |
+| `ORDERS_PAGES` | 250 | most pages read per order-house read |
+| `ORDERS_SECONDS` | 420 | longest one order-house read may take |
 | `BOT_HOST` | 127.0.0.1 | address the website listens on (needs `BOT_PASSWORD` if it is not this computer) |
 | `BOT_PASSWORD` | none | the team password (8+ characters); turns on the login, needed for remote use |
 | `BOT_VIEW_PASSWORD` | none | optional second password: can see the bot data but never send commands |

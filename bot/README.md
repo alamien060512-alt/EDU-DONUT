@@ -9,7 +9,7 @@ The bot's source. For installing, commands and troubleshooting read the top-leve
 | `strategy.js` | buy rules, price parsing (`12k`, `1.5m`), sell price calculation |
 | `ledger.js` | trade log: `data/trades.json`, `data/trades.csv`, `data/profit-vs-cost.xlsx` |
 | `market.js` | price board, price history and the watchlist |
-| `orders.js` | reads the order house (`/orders`, sorted Most Per Item, read-only) and keeps the best buy order per item |
+| `orders.js` | reads every page of the order house (`/orders`, sorted Most Per Item, read-only) and keeps the best buy order per item |
 | `access.js` | who may reach the website/API: local-only mode, team/viewer logins, optional public prices, view-only, lockout, rate limit |
 | `msa-patch.js` | tolerant Microsoft device-code sign-in (polls until the code is entered) |
 | `raknet-patch.js` | fixes for the pure-JavaScript RakNet fallback (protocol 11, MTU, security cookie, ordering) |
