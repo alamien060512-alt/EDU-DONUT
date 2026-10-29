@@ -81,6 +81,9 @@ const form = (pw) => ({ method: 'POST', path: '/login', body: 'password=' + enco
   const fake = (h) => ({ socket: { remoteAddress: '127.0.0.1' }, headers: h });
   assert.strictEqual(a.clientIp(fake({ 'cf-connecting-ip': '9.9.9.9' })), '9.9.9.9');
   assert.strictEqual(a.clientIp({ socket: { remoteAddress: '8.8.8.8' }, headers: { 'cf-connecting-ip': '9.9.9.9' } }), '8.8.8.8'); // header ignored when not from this computer
+  assert.strictEqual(a.clientIp(fake({ 'x-forwarded-for': '5.6.7.8, 127.0.0.1' })), '5.6.7.8');       // a proxy such as Caddy on this computer
+  assert.strictEqual(a.clientIp({ socket: { remoteAddress: '::ffff:127.0.0.1' }, headers: { 'x-forwarded-for': '5.6.7.8' } }), '5.6.7.8');
+  assert.strictEqual(a.clientIp({ socket: { remoteAddress: '8.8.8.8' }, headers: { 'x-forwarded-for': '5.6.7.8' } }), '8.8.8.8');   // spoofed header from outside is ignored
   let limited = 0; for (let i = 0; i < 260; i++) if (a.rateLimited('1.1.1.1')) limited++;
   assert.ok(limited >= 15);
   srv2.close();

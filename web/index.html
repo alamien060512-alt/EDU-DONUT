@@ -123,6 +123,7 @@ td small{color:var(--muted)}
     <span class="pill" id="botPill"><span class="dot"></span><span id="botText">connecting</span></span>
     <span class="spacer"></span>
     <a class="btn botonly" id="termLink" href="#term">Terminal</a>
+    <button class="btn botonly" id="updateBtn" type="button" title="Search every watched item in the auction house now">Update prices now</button>
     <button class="btn botonly" id="scanBtn" type="button">Pause scanning</button>
     <span class="pill" id="roPill" hidden title="Remote control is off on the PC">view only</span>
     <a class="btn" id="signin" href="/login" hidden>Team sign in</a>
@@ -354,7 +355,7 @@ function render() {
   document.body.classList.toggle('public', pub);
   $('botPill').style.display = pub ? 'none' : '';
   $('signin').hidden = !pub; $('logout').hidden = !S.session.auth || pub; $('roPill').hidden = pub || !S.session.readOnly;
-  for (const id of ['scanBtn', 'trackBtn', 'track']) $(id).disabled = S.session.readOnly;
+  for (const id of ['scanBtn', 'trackBtn', 'track', 'updateBtn']) $(id).disabled = S.session.readOnly;
   termState();
   renderPortfolio();
   renderOrders();
@@ -437,6 +438,10 @@ function renderDetail() {
   const to = S.orders.items.find((o) => o.item === it.item);
   d.append(el('div', { class: 'stats' }, stat('Average of 5 cheapest', fmt(it.avg5)), stat('Listings seen', String(it.n)), stat('Top buy order', to ? fmt(to.top) + ' each' : '–'), stat('Items buyers want', to ? String(to.demand) : '–'), stat('Change (24h)', pct(it.change24h), it.change24h == null ? '' : it.change24h >= 0 ? 'pos' : 'neg'), stat('Source', S.hist ? (S.hist.source === 'api' ? 'official API' : 'in-game scan') : '–')));
   if (S.session.role !== 'public') {
+  const upd = el('button', { class: 'btn', type: 'button', text: 'Update this item now', title: 'Search the auction house for this item right now' });
+  upd.disabled = !!S.session.readOnly;
+  upd.addEventListener('click', async () => { upd.disabled = true; upd.textContent = 'Updating...'; try { const r = await cmd('market scan ' + it.item); toast(typeof r === 'string' ? r : it.name + ': ' + (typeof r[it.item] === 'number' ? 'lowest ' + fmt(r[it.item]) : r[it.item])); } catch (e) { toast(e.message); } upd.textContent = 'Update this item now'; upd.disabled = S.session.readOnly; refresh(); });
+  d.append(el('div', { style: 'margin:4px 0 8px' }, upd));
   const rule = S.rules.find((r) => r.item === it.item);
   d.append(el('h3', { text: 'Bot rule', style: 'margin:14px 0 0;font-size:15px' }));
   d.append(el('p', { class: 'note', text: rule ? `Buying ${it.name} at ${full(rule.maxPrice)} or less, selling at ${rule.sellUnit ? full(rule.sellUnit) + ' each' : rule.sellMultiple + 'x'}.` : 'No rule yet. The bot only buys when you set one.' }));
@@ -468,6 +473,11 @@ function select(item) { S.sel = item; S.hist = null; renderDetail(); refresh(); 
 $('q').addEventListener('input', (e) => { S.q = e.target.value; render(); });
 $('sort').addEventListener('change', (e) => { S.sort = e.target.value; render(); });
 document.querySelectorAll('th button[data-s]').forEach((b) => b.addEventListener('click', () => { S.sort = b.dataset.s === 'up' && S.sort === 'up' ? 'down' : b.dataset.s === 'low' && S.sort === 'low' ? 'high' : b.dataset.s === 'low' ? 'low' : b.dataset.s; $('sort').value = [...$('sort').options].some((o) => o.value === S.sort) ? S.sort : 'name'; render(); }));
+$('updateBtn').addEventListener('click', async () => {
+  $('updateBtn').disabled = true;
+  try { const r = await cmd('market scan'); toast(typeof r === 'string' ? r : 'Updating ' + r.started + ' items (' + r.takes + '). Prices refresh as it goes.'); } catch (e) { toast(e.message); }
+  setTimeout(() => { $('updateBtn').disabled = S.session.readOnly; }, 4000); refresh();
+});
 $('scanBtn').addEventListener('click', async () => { try { await cmd('market ' + (S.status.scanning ? 'off' : 'on')); refresh(); } catch (e) { alert(e.message); } });
 $('trackBtn').addEventListener('click', async () => {
   const v = $('track').value.trim(); if (!v) return;
@@ -620,7 +630,7 @@ pfLoad();
 try { const t = localStorage.getItem('donut.tab'); if (t && t !== 'market') showTab(t); } catch {}
 
 // ---------- terminal ----------
-const COMMANDS = ['help', 'status', 'rules', 'buy', 'drop', 'limit', 'listed', 'pause', 'resume', 'live on', 'live off', 'scan', 'trades', 'fee', 'market on', 'market off', 'watch', 'watch add', 'watch remove', 'inv', 'peek', 'cmd', 'buynow', 'sellnow', 'inspectbuy', 'clear'];
+const COMMANDS = ['help', 'status', 'market scan', 'orders scan', 'rules', 'buy', 'drop', 'limit', 'listed', 'pause', 'resume', 'live on', 'live off', 'scan', 'trades', 'fee', 'market on', 'market off', 'watch', 'watch add', 'watch remove', 'inv', 'peek', 'cmd', 'buynow', 'sellnow', 'inspectbuy', 'clear'];
 const RISKY = /^\s*(live\s+on|buynow|sellnow|inspectbuy)\b/i;
 const T = { seq: 0, hist: [], pos: 0, first: true };
 try { T.hist = JSON.parse(localStorage.getItem('termHist') || '[]'); } catch {}

@@ -125,6 +125,7 @@ Nothing was charged; this is normal for popular items.
 | `cmd /bal` | send any in-game command (replies show in the log) |
 | `trades` | totals and where the spreadsheet is |
 | `fee <percent>` | set a sale fee for the spreadsheet (default 0) |
+| `market scan [item]` | update prices right now: one item (waits for the answer) or the whole watchlist (background) |
 | `market on\|off` | start / stop the price scanner |
 | `orders` / `orders scan` / `orders on\|off` | status / read the order house now / start or stop the order reader |
 | `icons` | where the bot found the item pictures, and how many |
@@ -265,6 +266,38 @@ In a second Command Prompt window run `cloudflared tunnel --url http://127.0.0.1
 `https://something.trycloudflare.com` link; open it on your phone and log in. Anyone who has the link sees the login page,
 so use a long unique password and close the tunnel when you are not using it.
 
+**Option C: your own DuckDNS address, with no port in it**
+
+DuckDNS only points a name at your home address; it cannot hide the port. To open `https://yourname.duckdns.org` with no
+`:8080`, the site has to be on the standard web ports (443 for https, 80 for the certificate check). Do **not** just set
+`BOT_API_PORT=80`: that is plain http, so your password would cross the internet unencrypted. Use **Caddy**, a small program
+that sits in front of the bot, gets a free https certificate for your DuckDNS name by itself and renews it:
+
+1. Keep your DuckDNS name updated (the DuckDNS updater you already use) so it points at your home address.
+2. Install Caddy: in Command Prompt run `winget install CaddyServer.Caddy` (or download it from <https://caddyserver.com/download>).
+3. In the bot folder copy `tools\Caddyfile.example` to a file named `Caddyfile` (no extension) and replace `YOURNAME` with your
+   DuckDNS name. It only has three lines:
+```
+yourname.duckdns.org {
+	reverse_proxy 127.0.0.1:8080
+}
+```
+4. On your router forward **TCP 443 and TCP 80** to this PC. Allow Caddy through Windows Firewall when it asks.
+5. Start the bot **with a password**, leaving the bot's own address alone (do not set `BOT_HOST`; Caddy talks to it locally):
+```
+set BOT_PASSWORD=long-team-password
+set BOT_PUBLIC=1
+set BOT_COOKIE_SECURE=1
+npm run bot
+```
+6. In a second Command Prompt window, in the bot folder: `caddy run --config Caddyfile`. The first start takes a few seconds to
+   get the certificate. Then open `https://yourname.duckdns.org` from anywhere. No port.
+
+Notes: this opens your router to the internet, so keep the password long and unique, leave `BOT_REMOTE_CONTROL` off unless you
+need it, and turn Caddy off when you do not need the site. The bot refuses to answer through a proxy unless a password is set.
+If your internet provider shares one address between many customers (CGNAT), port forwarding cannot work: use Option A
+(Tailscale) instead.
+
 **Public prices for everyone, bot data only for your team**
 
 You can let anyone open the price pages without signing in, while keeping the bot's own data and commands behind a login:
@@ -329,7 +362,7 @@ Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `
 | `BOT_VIEW_PASSWORD` | none | optional second password: can see the bot data but never send commands |
 | `BOT_PUBLIC=1` | off | anyone without a login can see item prices and details (needs `BOT_PASSWORD`) |
 | `BOT_REMOTE_CONTROL=1` | off | let the team login send commands from the website (default is view only) |
-| `BOT_COOKIE_SECURE=1` | off | mark the login cookie `Secure` (set it if you serve the site over https yourself) |
+| `BOT_COOKIE_SECURE=1` | off | mark the login cookie `Secure` (set it when the site is served over https, e.g. through Caddy) |
 
 ## 11. Troubleshooting
 
@@ -364,6 +397,7 @@ delete `data/auth`.
 | `bot/market.js` | price board and watchlist |
 | `bot/orders.js` | reads the order house (`/orders`) and keeps the top buy order per item |
 | `tools/make-icons.sh` | makes the item pictures with RenderChest into `data/icons` |
+| `tools/Caddyfile.example` | three-line Caddy config for `https://yourname.duckdns.org` without a port |
 | `bot/access.js` | website login, view-only mode and the rules for who may reach the bot |
 | `web/index.html` | the price website |
 | `bot/*-patch.js` | fixes for login and network libraries |

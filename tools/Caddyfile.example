@@ -1,0 +1,12 @@
+# Caddy puts your DuckDNS address on the normal web ports (443 for https, 80 for the certificate check),
+# gets and renews a free https certificate by itself, and passes visitors on to the bot, which stays private
+# on this computer (127.0.0.1:8080). So the address has no port in it:  https://YOURNAME.duckdns.org
+#
+# 1. Replace YOURNAME below with your DuckDNS name.
+# 2. Copy this file to a file called  Caddyfile  (no extension) in the bot folder.
+# 3. Run:  caddy run --config Caddyfile
+# See HOW-TO-USE.md, section 9, "Option C".
+
+YOURNAME.duckdns.org {
+	reverse_proxy 127.0.0.1:8080
+}

@@ -298,11 +298,26 @@ async function runInner(line) {
       ah.closeAll();
       return rows.length ? rows : 'the order window had no items';
     }
-    case 'market': { // market on | off | status
+    case 'market': { // market on | off | status | scan [item ...]
       if (a[0] === 'on') market.on = true; else if (a[0] === 'off') { market.on = false; market.save(); }
+      else if (a[0] === 'scan') {
+        // update the price board right now. With 1-5 items it waits and returns their prices; with none it refreshes the whole watchlist in the background.
+        if (KEY) { await marketApiPass(); return market.status(watch); }
+        if (!state.connected) return 'not connected yet';
+        const items = a.slice(1).map((x) => x.toLowerCase().replace(/^minecraft:/, '').replace(/\s+/g, '_'));
+        if (items.length && items.length <= 5) {
+          const out = {};
+          for (const it of items) { try { const low = await marketSearch(it); out[it] = low == null ? 'no plain listing found' : low; } catch (e) { out[it] = 'failed: ' + String(e.message).slice(0, 120); } }
+          return out;
+        }
+        if (forcedRunning) return 'an update is already running, watch the log';
+        const list = items.length ? items : watch.items.slice();
+        marketForce(list);
+        return { started: list.length, takes: 'about ' + Math.max(1, Math.round(list.length * (MARKET_MS / 1000 + 2) / 60)) + ' minutes', note: 'running in the background; watch the log or the Market tab' };
+      }
       return market.status(watch);
     }
-    case 'help': return 'market on|off | watch [add|remove <item>] | trades | status | rules | buy <item> <max> [sell <price> | <multiple>] | drop <item> | limit <n> | pause | resume | listed <n> | cmd </command> | scan | live on|off | quit';
+    case 'help': return 'market scan [item] | market on|off | watch [add|remove <item>] | trades | status | rules | buy <item> <max> [sell <price> | <multiple>] | drop <item> | limit <n> | pause | resume | listed <n> | cmd </command> | scan | live on|off | quit';
     case 'status': return { connected: state.connected, live: state.live, spent: state.spent, rules: rules.list().length, listed: state.listed, maxListings: state.maxListings || 'none', paused: state.paused };
     case 'rules': return rules.list();
     case 'buy': { const b = parseBuy(a); return rules.add(b.item, b.maxPrice, b.sellMultiple, b.sellUnit); }
@@ -381,6 +396,26 @@ async function ordersLoop() {
 
 // ---- price board scanners ----
 // In game: search each watched item in /ah (cheapest first) and record the plain listings it shows.
+// Search one item in /ah and record the plain listings the page shows. Returns that item's lowest price (or null).
+async function marketSearch(item) {
+  await withAh(async () => {
+    const win = await ah.open('/ah ' + item.replace(/_/g, ' '), 2);
+    const groups = new Map();
+    for (const [, it] of win.slots) {
+      if (!it || !it.network_id) continue;
+      const name = ah.nameOf(it); if (!name || ah.enchanted(it)) continue;
+      const price = ah.priceOf(it); if (!(price > 0)) continue;
+      const k = clean(name), g = groups.get(k) || { name, units: [] };
+      g.units.push(price / (it.count || 1)); groups.set(k, g);
+    }
+    for (const [k, g] of groups) market.record(k, g.name, g.units, 'ingame');
+    ah.close();
+  });
+  const rec = market.items[clean(item)];
+  return rec ? rec.low : null;
+}
+
+// The scanner, walking the whole watchlist over and over.
 async function marketGuiLoop() {
   let fails = 0;                                              // searches that failed in a row
   for (;;) {
@@ -388,22 +423,8 @@ async function marketGuiLoop() {
     for (const item of watch.items.slice()) {
       if (!market.on || !state.connected) break;
       market.current = item;
-      try {
-        await withAh(async () => {
-          const win = await ah.open('/ah ' + item.replace(/_/g, ' '), 2);
-          const groups = new Map();
-          for (const [, it] of win.slots) {
-            if (!it || !it.network_id) continue;
-            const name = ah.nameOf(it); if (!name || ah.enchanted(it)) continue;
-            const price = ah.priceOf(it); if (!(price > 0)) continue;
-            const k = clean(name), g = groups.get(k) || { name, units: [] };
-            g.units.push(price / (it.count || 1)); groups.set(k, g);
-          }
-          for (const [k, g] of groups) market.record(k, g.name, g.units, 'ingame');
-          ah.close();
-        });
-        fails = 0;
-      } catch (e) {
+      try { await marketSearch(item); fails = 0; }
+      catch (e) {
         fails++;
         log(`market: ${item}: ${String(e.message).slice(0, 200)}`);
         if (fails >= 3) { const pause = Math.min(fails * 20, 120); log(`market: ${fails} failed searches in a row, pausing ${pause}s`); await withAh(async () => { ah.closeAll(); ah.closeRecent(); }); await sleep(pause * 1000); }
@@ -413,38 +434,61 @@ async function marketGuiLoop() {
     market.passes++; market.current = null; market.save();
   }
 }
-// With an API key: read a bunch of pages from the official listings endpoint (a sample of the whole market).
-async function marketApiLoop() {
-  const pages = +process.env.PAGES || 10, every = +process.env.MARKET_API_MS || 60000;
-  for (;;) {
-    if (market.on) {
-      const groups = new Map();
-      for (let p = 1; p <= pages; p++) {
-        let rows; try { rows = rowsOf(await api('/auction/list/' + p)); } catch (e) { log('market api: ' + e.message); break; }
-        if (!rows.length) break;
-        for (const r of rows) { const l = toListing(r); if (l.item && l.price > 0) (groups.get(l.item) || groups.set(l.item, []).get(l.item)).push(l.price / l.count); }
-        await sleep(1400);
-      }
-      for (const [k, units] of groups) market.record(k, pretty(k), units, 'api');
-      market.passes++; market.save();
+
+// "market scan": update right now, without waiting for the loop. Runs in the background, one item after another.
+let forcedRunning = false;
+async function marketForce(items) {
+  forcedRunning = true; let done = 0, failed = 0;
+  try {
+    for (const item of items) {
+      market.current = item;
+      try { await marketSearch(item); } catch (e) { failed++; log(`market: ${item}: ${String(e.message).slice(0, 200)}`); }
+      done++; if (done % 10 === 0) log(`market update: ${done}/${items.length}`);
+      await sleep(MARKET_MS);
     }
-    await sleep(every);
+    market.passes++; market.save();
+    log(`market update finished: ${done - failed} of ${items.length} items refreshed`);
+  } finally { forcedRunning = false; market.current = null; }
+}
+// With an API key: read a bunch of pages from the official listings endpoint (a sample of the whole market).
+async function marketApiPass() {
+  const pages = +process.env.PAGES || 10, groups = new Map();
+  for (let p = 1; p <= pages; p++) {
+    let rows; try { rows = rowsOf(await api('/auction/list/' + p)); } catch (e) { log('market api: ' + e.message); break; }
+    if (!rows.length) break;
+    for (const r of rows) { const l = toListing(r); if (l.item && l.price > 0) (groups.get(l.item) || groups.set(l.item, []).get(l.item)).push(l.price / l.count); }
+    await sleep(1400);
   }
+  for (const [k, units] of groups) market.record(k, pretty(k), units, 'api');
+  market.passes++; market.save();
+}
+async function marketApiLoop() {
+  const every = +process.env.MARKET_API_MS || 60000;
+  for (;;) { if (market.on) await marketApiPass(); await sleep(every); }
 }
 
 // ---- website + API ----
+// Extra headers when the bot can be reached from outside (a password is set): no sniffing, no framing, no referrer leaks,
+// and "use https only" when a proxy such as Caddy tells us the visitor came in over https.
+function safeHeaders(req) {
+  if (!access.passwordMode) return {};
+  const h = { 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'same-origin' };
+  if (req.headers['x-forwarded-proto'] === 'https') h['strict-transport-security'] = 'max-age=604800';
+  return h;
+}
 const PUBLIC_READ = /^\/(market|prices|orders)(\/|$)/;   // price data is read-only, so other websites may fetch it
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
   if (await access.gate(req, res, u)) return;      // host checks, or the login when a password is set
+  const base = safeHeaders(req);
   const send = (o, c = 200) => {
-    const h = { 'content-type': 'application/json' };
+    const h = { ...base, 'content-type': 'application/json' };
     if (PUBLIC_READ.test(u.pathname) && !access.passwordMode) h['access-control-allow-origin'] = '*';
     res.writeHead(c, h); res.end(JSON.stringify(o));
   };
   try {
     if (u.pathname === '/' || u.pathname === '/index.html') {
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.writeHead(200, { ...base, 'content-type': 'text/html; charset=utf-8' });
       return res.end(fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html')));
     }
     if (u.pathname.startsWith('/icons/')) {            // item pictures made by RenderChest (see HOW-TO-USE.md)
@@ -452,7 +496,7 @@ http.createServer(async (req, res) => {
       const dir = getIconDir();
       let file = null; try { file = m && dir && fs.readFileSync(path.join(dir, m[1] + '.webp')); } catch {}
       if (!file) { res.writeHead(404); return res.end(); }
-      res.writeHead(200, { 'content-type': 'image/webp', 'cache-control': 'public, max-age=86400' }); return res.end(file);
+      res.writeHead(200, { ...base, 'content-type': 'image/webp', 'cache-control': 'public, max-age=86400' }); return res.end(file);
     }
     if (u.pathname === '/orders') return send({ status: orderBoard.status(), items: orderBoard.list() });
     if (u.pathname === '/session') return send({ auth: access.passwordMode, role: req.role, publicMode: access.publicMode, readOnly: !access.canControl(req) });
@@ -502,4 +546,4 @@ if (require.main === module) {
   rl.prompt();
   rl.on('line', async (l) => { try { const r = await run(l); console.log(typeof r === 'string' ? r : JSON.stringify(r, null, 1)); } catch (e) { console.log('error:', e.message); } rl.prompt(); });
 }
-module.exports = { run, rules, state };
+module.exports = { run, rules, state, _test: { setAh: (x) => { ah = x; state.connected = true; }, market, watch } };
