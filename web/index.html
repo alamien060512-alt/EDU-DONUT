@@ -39,6 +39,22 @@ button{cursor:pointer}
 .btn.primary:hover{filter:brightness(1.05)}
 a.btn{display:inline-block;color:inherit;text-decoration:none}
 body.public .botonly{display:none !important}
+.tabs{display:flex;gap:6px;margin:0 0 12px;border-bottom:1px solid var(--line)}
+.tab{all:unset;cursor:pointer;padding:9px 14px;border-bottom:3px solid transparent;color:var(--muted);font-weight:600}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;border-radius:6px}
+.pfform{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px}
+.pfform label{display:block;font-size:12px;color:var(--muted);margin-bottom:2px}
+.pfform input{width:100%;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 10px;min-width:0}
+@media (max-width:900px){.pfform{grid-template-columns:1fr 1fr}.pfform .wide{grid-column:1/-1}}
+.pfrow td button{all:unset;cursor:pointer;color:var(--muted);padding:2px 6px;border-radius:6px}
+.pfrow td button:hover{color:var(--ink);background:var(--soft)}
+.pfrow td button:focus-visible{outline:2px solid var(--focus)}
+.alert{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.itemlink{all:unset;cursor:pointer;font-weight:560}
+.itemlink:hover{text-decoration:underline}
+.itemlink:focus-visible{outline:2px solid var(--focus)}
+.toast{position:fixed;right:16px;bottom:16px;max-width:320px;background:var(--panel);border:1px solid var(--accent);border-radius:10px;padding:10px 14px;box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:20}
 .term{margin-top:14px}
 .termbar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line)}
 .termbar label{font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center}
@@ -116,6 +132,12 @@ td small{color:var(--muted)}
     <div class="card botonly"><div class="k">Bot</div><div class="v" id="cBot">–</div><div class="s" id="cBotSub">–</div></div>
   </section>
 
+  <div class="tabs" role="tablist" aria-label="Views">
+    <button class="tab" role="tab" id="tabMarket" aria-selected="true" aria-controls="viewMarket" type="button">Market</button>
+    <button class="tab" role="tab" id="tabPortfolio" aria-selected="false" aria-controls="viewPortfolio" type="button">My portfolio <span id="pfCount"></span></button>
+  </div>
+
+  <div id="viewMarket" role="tabpanel" aria-labelledby="tabMarket">
   <div class="toolbar">
     <input type="search" id="q" placeholder="Search items (e.g. diamond, elytra)" aria-label="Search items">
     <select id="sort" aria-label="Sort by">
@@ -154,6 +176,43 @@ td small{color:var(--muted)}
       <div class="empty">Select an item to see its price history and set a buy rule.</div>
     </aside>
   </div>
+  </div>
+
+  <div id="viewPortfolio" role="tabpanel" aria-labelledby="tabPortfolio" hidden>
+    <section class="cards" aria-label="Portfolio summary">
+      <div class="card"><div class="k">Items</div><div class="v" id="pfItems">0</div><div class="s" id="pfItemsSub"> </div></div>
+      <div class="card"><div class="k">Current value</div><div class="v" id="pfValue">–</div><div class="s">quantity × lowest price</div></div>
+      <div class="card"><div class="k">What you paid</div><div class="v" id="pfCost">–</div><div class="s">items with a buy price</div></div>
+      <div class="card"><div class="k">Profit / loss</div><div class="v" id="pfPl">–</div><div class="s" id="pfPlSub"> </div></div>
+    </section>
+    <form class="pfform" id="pfForm" autocomplete="off">
+      <div class="wide"><label for="pfItem">Item</label><input id="pfItem" list="pfList" placeholder="e.g. diamond" required><datalist id="pfList"></datalist></div>
+      <div><label for="pfQty">How many (0 = just watch)</label><input id="pfQty" inputmode="numeric" placeholder="0"></div>
+      <div><label for="pfCostIn">Buy price each ($)</label><input id="pfCostIn" inputmode="decimal" placeholder="optional"></div>
+      <div><label for="pfAbove">Alert at or above ($)</label><input id="pfAbove" inputmode="decimal" placeholder="optional"></div>
+      <div><label for="pfBelow">Alert at or below ($)</label><input id="pfBelow" inputmode="decimal" placeholder="optional"></div>
+      <button class="btn primary" id="pfSave" type="submit">Add</button>
+    </form>
+    <p class="note" id="pfMsg" role="status"></p>
+    <section class="panel" aria-label="Portfolio">
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Item</th><th>Qty</th><th>Buy price</th><th>Now</th><th>Value</th><th>Profit / loss</th><th>24h</th><th>Alert</th><th></th></tr></thead>
+          <tbody id="pfRows"></tbody>
+        </table>
+        <div id="pfEmpty" class="empty">Nothing here yet. Add an item above to follow its price, or add how many you own to see what it is worth.</div>
+      </div>
+    </section>
+    <p class="note">Saved only in this browser, on this device: your phone, your laptop and a teammate's computer each keep their own portfolio,
+      and nothing is sent to the bot. Clearing the browser's site data, or using a private window, removes it.</p>
+    <div class="toolbar">
+      <button class="btn" id="pfExport" type="button">Export</button>
+      <button class="btn" id="pfImportBtn" type="button">Import</button>
+      <input type="file" id="pfImport" accept="application/json" hidden>
+      <button class="btn" id="pfNotify" type="button">Enable alert notifications</button>
+    </div>
+  </div>
+
   <section class="panel botonly term" id="term" aria-label="Bot terminal">
     <div class="termbar"><b>Terminal</b><span class="spacer"></span>
       <label><input type="checkbox" id="showLog" checked> show bot log</label>
@@ -248,6 +307,7 @@ function render() {
   $('signin').hidden = !pub; $('logout').hidden = !S.session.auth || pub; $('roPill').hidden = pub || !S.session.readOnly;
   for (const id of ['scanBtn', 'trackBtn', 'track']) $(id).disabled = S.session.readOnly;
   termState();
+  renderPortfolio();
   const b = S.bot, st = S.status, tr = S.trades && S.trades.summary;
   $('botPill').className = 'pill ' + (b.connected ? 'ok' : 'bad');
   $('botText').textContent = b.connected ? (b.live ? 'bot online · LIVE trading' : 'bot online · dry run') : 'bot not in game';
@@ -368,6 +428,115 @@ $('themeBtn').addEventListener('click', () => {
   try { localStorage.setItem('theme', next); } catch {}
 });
 try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+
+// ---------- portfolio (saved in this browser only) ----------
+const PF_KEY = 'donut.portfolio.v1';
+const P = { items: [], alerted: {}, edit: null };
+const keyOf = (t) => String(t).trim().toLowerCase().replace(/^minecraft:/, '').replace(/\s+/g, '_');
+const numOrNull = (v) => { const n = parseFloat(String(v).replace(/[,$\s]/g, '')); return Number.isFinite(n) && n >= 0 ? n : null; };
+const pfValid = (x) => x && typeof x.item === 'string' && x.item && Number.isFinite(x.qty) && x.qty >= 0;
+function pfLoad() {
+  try { const j = JSON.parse(localStorage.getItem(PF_KEY) || '{}'); if (Array.isArray(j.items)) P.items = j.items.filter(pfValid); P.alerted = j.alerted || {}; } catch {}
+}
+function pfSave() {
+  try { localStorage.setItem(PF_KEY, JSON.stringify({ items: P.items, alerted: P.alerted })); }
+  catch { pfMsg('Could not save in this browser (a private window or blocked storage).'); }
+}
+function pfMsg(t) { $('pfMsg').textContent = t; }
+function toast(text) {
+  const t = el('div', { class: 'toast', role: 'status', text }); document.body.append(t); setTimeout(() => t.remove(), 9000);
+  try { if (window.Notification && Notification.permission === 'granted') new Notification('DonutSMP price alert', { body: text }); } catch {}
+}
+function showTab(name) {
+  const m = name !== 'portfolio';
+  $('viewMarket').hidden = !m; $('viewPortfolio').hidden = m;
+  $('tabMarket').setAttribute('aria-selected', String(m)); $('tabPortfolio').setAttribute('aria-selected', String(!m));
+  try { localStorage.setItem('donut.tab', name); } catch {}
+  if (!m) renderPortfolio();
+}
+function renderPortfolio() {
+  $('pfCount').textContent = P.items.length ? '(' + P.items.length + ')' : '';
+  const dl = $('pfList'); dl.textContent = '';
+  S.items.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach((i) => dl.append(el('option', { value: i.name })));
+  const rows = $('pfRows'); rows.textContent = '';
+  let value = 0, cost = 0, plCost = 0, pl = 0, noPrice = 0, changed = false;
+  for (const x of P.items) {
+    const it = S.items.find((i) => i.item === x.item), cur = it ? it.low : null;
+    const val = cur != null ? x.qty * cur : null, paid = x.cost != null ? x.qty * x.cost : null;
+    const gain = val != null && paid != null && x.qty > 0 ? val - paid : null;
+    if (x.qty > 0) { if (val != null) value += val; else noPrice++; if (paid != null) cost += paid; if (gain != null) { pl += gain; plCost += paid; } }
+    const hitA = cur != null && x.above != null && cur >= x.above, hitB = cur != null && x.below != null && cur <= x.below;
+    for (const [k, hit, msg] of [[x.item + ':a', hitA, `${it ? it.name : x.item} is at ${fmt(cur)}, at or above your ${fmt(x.above)} alert`], [x.item + ':b', hitB, `${it ? it.name : x.item} is at ${fmt(cur)}, at or below your ${fmt(x.below)} alert`]]) {
+      if (hit && !P.alerted[k]) { P.alerted[k] = true; changed = true; toast(msg); } else if (!hit && P.alerted[k]) { delete P.alerted[k]; changed = true; }
+    }
+    const tr = el('tr', { class: 'pfrow' });
+    const nameTd = el('td'); const link = el('button', { class: 'itemlink', type: 'button', text: it ? it.name : x.item.replace(/_/g, ' '), title: 'Open in Market' });
+    link.addEventListener('click', () => { showTab('market'); if (it) select(x.item); }); nameTd.append(link); tr.append(nameTd);
+    tr.append(el('td', { text: x.qty > 0 ? String(x.qty) : 'watching' }));
+    tr.append(el('td', { text: x.cost != null ? fmt(x.cost) : '–', title: x.cost != null ? full(x.cost) : '' }));
+    tr.append(el('td', { text: cur != null ? fmt(cur) : 'no price yet', title: cur != null ? full(cur) : 'The bot has not seen this item yet' }));
+    tr.append(el('td', { text: val != null && x.qty > 0 ? fmt(val) : '–', title: val != null ? full(val) : '' }));
+    tr.append(el('td', { class: gain == null ? '' : gain >= 0 ? 'pos' : 'neg', text: gain == null ? '–' : `${gain >= 0 ? '+' : '-'}${fmt(Math.abs(gain))} (${pct(paid > 0 ? gain / paid : null)})` }));
+    tr.append(el('td', { class: it && it.change24h != null ? (it.change24h >= 0 ? 'pos' : 'neg') : '', text: it ? pct(it.change24h) : '–' }));
+    const al = el('td'); if (hitA || hitB) al.append(el('span', { class: 'alert', text: hitA ? 'above ' + fmt(x.above) : 'below ' + fmt(x.below) })); else if (x.above != null || x.below != null) al.append(el('small', { text: [x.below != null ? '≤ ' + fmt(x.below) : '', x.above != null ? '≥ ' + fmt(x.above) : ''].filter(Boolean).join('  ') })); else al.textContent = '–';
+    tr.append(al);
+    const act = el('td'); const ed = el('button', { type: 'button', text: 'Edit', 'aria-label': 'Edit ' + x.item }), rm = el('button', { type: 'button', text: 'Remove', 'aria-label': 'Remove ' + x.item });
+    ed.addEventListener('click', () => pfEdit(x)); rm.addEventListener('click', () => { if (confirm('Remove ' + (it ? it.name : x.item) + ' from your portfolio?')) { P.items = P.items.filter((y) => y.item !== x.item); pfSave(); renderPortfolio(); } });
+    act.append(ed, rm); tr.append(act); rows.append(tr);
+  }
+  if (changed) pfSave();
+  $('pfEmpty').hidden = P.items.length > 0;
+  $('pfItems').textContent = String(P.items.length);
+  $('pfItemsSub').textContent = noPrice ? noPrice + ' without a price yet' : P.items.filter((x) => x.qty > 0).length + ' owned, ' + P.items.filter((x) => x.qty === 0).length + ' watching';
+  $('pfValue').textContent = P.items.some((x) => x.qty > 0) ? fmt(value) : '–';
+  $('pfCost').textContent = cost > 0 ? fmt(cost) : '–';
+  $('pfPl').textContent = plCost > 0 ? (pl >= 0 ? '+' : '-') + fmt(Math.abs(pl)) : '–';
+  $('pfPl').className = 'v ' + (plCost > 0 ? (pl >= 0 ? 'pos' : 'neg') : '');
+  $('pfPlSub').textContent = plCost > 0 ? pct(pl / plCost) + ' on what you paid' : 'add a buy price to see this';
+}
+function pfEdit(x) {
+  P.edit = x.item;
+  $('pfItem').value = (S.items.find((i) => i.item === x.item) || { name: x.item.replace(/_/g, ' ') }).name;
+  $('pfQty').value = x.qty || ''; $('pfCostIn').value = x.cost ?? ''; $('pfAbove').value = x.above ?? ''; $('pfBelow').value = x.below ?? '';
+  $('pfSave').textContent = 'Save'; $('pfItem').focus(); pfMsg('Editing ' + x.item.replace(/_/g, ' ') + '. Change the numbers and press Save.');
+}
+$('pfForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const key = keyOf($('pfItem').value), q = numOrNull($('pfQty').value || '0');
+  if (!key) return;
+  if (q == null || !Number.isInteger(q)) { pfMsg('How many must be a whole number (0 to just watch).'); return; }
+  const known = S.items.some((i) => i.item === key);
+  const x = { item: key, qty: q, cost: numOrNull($('pfCostIn').value), above: numOrNull($('pfAbove').value), below: numOrNull($('pfBelow').value) };
+  const i = P.items.findIndex((y) => y.item === key);
+  if (i >= 0) P.items[i] = x; else P.items.push(x);
+  // a new target means the alert can fire again
+  delete P.alerted[key + ':a']; delete P.alerted[key + ':b'];
+  pfSave(); $('pfForm').reset(); $('pfSave').textContent = 'Add'; P.edit = null;
+  pfMsg((i >= 0 ? 'Saved ' : 'Added ') + key.replace(/_/g, ' ') + (known ? '.' : '. The bot is not tracking this item yet, so it has no price. Ask whoever runs the bot to add it.'));
+  renderPortfolio();
+});
+$('pfExport').addEventListener('click', () => {
+  const a = el('a', { href: URL.createObjectURL(new Blob([JSON.stringify({ version: 1, items: P.items }, null, 2)], { type: 'application/json' })), download: 'portfolio.json' });
+  document.body.append(a); a.click(); a.remove();
+});
+$('pfImportBtn').addEventListener('click', () => $('pfImport').click());
+$('pfImport').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text()); const items = (j.items || []).filter(pfValid).map((x) => ({ item: keyOf(x.item), qty: x.qty, cost: numOrNull(x.cost), above: numOrNull(x.above), below: numOrNull(x.below) }));
+    if (!items.length) throw new Error('no items in that file');
+    if (!confirm('Replace this device\'s portfolio with ' + items.length + ' items from the file?')) return;
+    P.items = items; P.alerted = {}; pfSave(); renderPortfolio(); pfMsg('Imported ' + items.length + ' items.');
+  } catch (err) { pfMsg('Could not import that file: ' + err.message); }
+});
+$('pfNotify').addEventListener('click', async () => {
+  if (!window.Notification) { pfMsg('This browser does not support notifications. Alerts still show on the page.'); return; }
+  const r = await Notification.requestPermission(); pfMsg(r === 'granted' ? 'Notifications on. They show while this page is open.' : 'Notifications are off for this site.');
+});
+$('tabMarket').addEventListener('click', () => showTab('market'));
+$('tabPortfolio').addEventListener('click', () => showTab('portfolio'));
+pfLoad();
+try { if (localStorage.getItem('donut.tab') === 'portfolio') showTab('portfolio'); } catch {}
 
 // ---------- terminal ----------
 const COMMANDS = ['help', 'status', 'rules', 'buy', 'drop', 'limit', 'listed', 'pause', 'resume', 'live on', 'live off', 'scan', 'trades', 'fee', 'market on', 'market off', 'watch', 'watch add', 'watch remove', 'inv', 'peek', 'cmd', 'buynow', 'sellnow', 'inspectbuy', 'clear'];

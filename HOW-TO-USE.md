@@ -159,6 +159,22 @@ The bot searches each watched item in `/ah` (about 70 by default, one every 7 se
 which covers more items. The site only works while the bot runs. By default only your own computer can open it; to use it from your phone away
 from home see section 9.
 
+**My portfolio.** The **My portfolio** tab (next to **Market**) lets each person follow the items they care about:
+
+1. Type an item (pick from the list), **how many** you own (0 = just watch it), and optionally what you **paid each**,
+   and an **alert** price (at or above / at or below). Press **Add**.
+2. The table shows each item's current lowest price, its value, your profit or loss and the 24h change. The cards at the top
+   add it all up. Items with a price alert show a badge and pop up a message when the price crosses your target
+   (**Enable alert notifications** also shows a browser notification while the page is open).
+3. **Edit** and **Remove** change or delete an item. Clicking an item's name opens it in the Market tab.
+4. **Export** saves your portfolio as a file and **Import** loads one, which is how you move it to another device.
+
+The portfolio is saved **only in that browser on that device**. Your phone, your laptop and a teammate's computer each have
+their own separate portfolio, nothing is sent to the bot, and people who are not signed in can use it too.
+(A website cannot tell devices apart by their hardware, so "per device" means per browser. A private window or cleared
+site data starts empty.) An item the bot is not tracking yet shows "no price yet"; add it to the bot's watchlist with
+`watch add <item>`.
+
 **Built-in terminal.** At the bottom of the page (or click **Terminal** at the top) is a terminal. Type any command from
 section 6 and press Enter, exactly as you would at the `bot>` prompt in Command Prompt:
 
