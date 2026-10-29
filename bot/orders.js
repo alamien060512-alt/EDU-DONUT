@@ -113,8 +113,12 @@ async function scanOrders(ah, { maxPages = 250, maxSeconds = 420, wait = 1500, p
   // 2) read every page
   let read = 0, ended = 'last page reached', next = 0;
   for (let p = at; p < maxPages; p++) {
-    const page = orders();
-    if (!page.length) { ended = 'a page had no orders'; break; }
+    let page = orders();
+    for (let i = 0; !page.length && i < 20; i++) { await sleep(200); page = orders(); }   // a page can still be filling in
+    if (!page.length) {
+      if (read === 0 && startPage > 0) { ah.closeAll(); throw new Error('orders: could not get back to page ' + (startPage + 1) + ', will start again'); }
+      ended = 'a page had no orders'; break;
+    }
     read++;
     for (const t of page) {
       const key = clean(t.name); if (!key) continue;
