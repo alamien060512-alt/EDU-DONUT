@@ -118,6 +118,7 @@ async function scanOrders(ah, { maxPages = 250, maxSeconds = 420, wait = 1500, p
     if (!(await waitChange(before))) break;       // the page did not change: that was the last one
   }
   ah.closeAll();
+  await sleep(wait);                 // let the server settle before the next /ah command
   return { items: best, pages: read, sorted, note: [note, read >= maxPages ? 'page limit reached' : ended].filter(Boolean).join('; ') };
 }
 

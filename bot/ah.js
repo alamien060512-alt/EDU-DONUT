@@ -15,17 +15,20 @@ class AhDriver {
     this.other = new Map();   // windows the server opened on us (like the confirm menu), we never asked for these
     this.pkts = {};
     this.timeline = [];       // short log of the interesting packets, handy when a step fails
-    const noisyName = /chunk|entity|time|latency|attributes|level_|sound|move_|block|biome|score|player_list|add_player|animate|actor|tick|particle|event|camera|health|mob_|network_stack|set_title|update_soft_enum|available_commands|commands/;
+    const noisyName = /chunk|entity|time|latency|attributes|level_|sound|move_|block|biome|score|player_list|add_player|animate|actor|tick|particle|event|camera|health|mob_|network_stack|update_soft_enum|available_commands|commands/;
     client.on('packet', (d) => {
       const n = d && d.data && d.data.name; if (!n) return;
       this.pkts[n] = (this.pkts[n] || 0) + 1;
-      if (noisyName.test(n)) return;
       const pr = d.data.params || {};
+      if (n === 'set_title' && !String(pr.text || '').trim()) return;    // empty title packets are just noise
+      if (noisyName.test(n)) return;
       let brief = '';
       if (n === 'text') brief = String(pr.message || '').replace(/§./g, '').slice(0, 100);
       else if (n === 'command_output') brief = JSON.stringify((pr.output || []).map((o) => o.message_id + ' ' + (o.parameters || []).join(','))).slice(0, 140);
       else if (n === 'disconnect') brief = String(pr.message || pr.reason || '').slice(0, 140);
       else if (n === 'container_open' || n === 'container_close') brief = 'id=' + pr.window_id;
+      else if (n === 'set_title') brief = String(pr.text || '').replace(/§./g, '').slice(0, 100);
+      else if (n === 'toast_request') brief = String(pr.title || '') + ' ' + String(pr.message || '');
       else if (n === 'modal_form_request') brief = String(pr.data || '').slice(0, 100);
       else if (n === 'inventory_content' || n === 'inventory_slot') brief = 'id=' + pr.window_id;
       this.timeline.push(`${new Date().toISOString().slice(17, 23)} ${n} ${brief}`.trim());
@@ -88,6 +91,7 @@ class AhDriver {
     let last = '';
     for (let i = 1; i <= tries; i++) {
       this.closeAll();            // make sure the server has nothing of ours left open
+      if (i > 1) this.closeRecent();   // a retry: be thorough and close every window we have seen lately
       this.win = null; this.events.push('-- open ' + cmd + (i > 1 ? ' (retry ' + i + ')' : ''));
       const mark = this.timeline.length;
       await new Promise((r) => setTimeout(r, i === 1 ? 400 : 2000 * i));
@@ -191,6 +195,12 @@ class AhDriver {
   interestingPackets() {
     const noisy = /chunk|entity|time|latency|attributes|level_|sound|move_|block|biome|score|player_list|add_player|animate|actor|tick|particle|event|camera|health|mob_/;
     return Object.fromEntries(Object.entries(this.pkts).filter(([n]) => !noisy.test(n)));
+  }
+  // Close every window id we have seen lately, in case the server still thinks one is open. Unknown ids are ignored by the server.
+  closeRecent() {
+    const ids = new Set([...this.other.keys()]);
+    for (const l of this.timeline.slice(-120)) { const m = /(?:container_open|inventory_content) id=(\S+)/.exec(l); if (m) ids.add(isNaN(m[1]) ? m[1] : +m[1]); }
+    for (const id of ids) if (!['inventory', 'offhand', 'armor', 'ui', 'hotbar', 'fixed_inventory', 'creative', 'none'].includes(String(id))) this.closeWindow(id);
   }
   // Close one window by id (a confirm menu, say). Harmless if the server already closed it.
   closeWindow(id) {

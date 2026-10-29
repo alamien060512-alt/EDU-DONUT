@@ -39,3 +39,17 @@ ah3.closeWindow(5); assert.strictEqual(o3.length, 1);
 c3.emit('container_close', { window_id: 5, window_type: 'container' });   // the server echoes our close
 assert.strictEqual(o3.length, 1);
 console.log('no close ping-pong ok');
+
+// Action-bar text is kept (it often explains why a command did nothing), and closeRecent closes windows we have seen lately.
+const c4 = new EventEmitter(); const o4 = []; c4.queue = (n, p) => o4.push([n, p]); c4.entityId = 1n;
+const ah4 = new AhDriver(c4, () => {});
+c4.emit('packet', { data: { name: 'set_title', params: { type: 'action_bar_message', text: '§cPlease wait 3 seconds' } } });
+c4.emit('packet', { data: { name: 'set_title', params: { type: 'clear', text: '' } } });
+assert.ok(ah4.timeline.some((l) => /set_title Please wait 3 seconds/.test(l)));
+assert.strictEqual(ah4.timeline.filter((l) => /set_title/.test(l)).length, 1);        // the empty one is skipped
+c4.emit('packet', { data: { name: 'container_open', params: { window_id: 7, window_type: 'container' } } });
+c4.emit('packet', { data: { name: 'inventory_content', params: { window_id: 'first', input: [] } } });
+ah4.closeRecent();
+const closed = o4.filter(([n]) => n === 'container_close').map(([, p]) => p.window_id);
+assert.ok(closed.includes(7) && closed.includes('first'));
+console.log('action bar + closeRecent ok');

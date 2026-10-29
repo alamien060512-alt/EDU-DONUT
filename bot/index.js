@@ -382,6 +382,7 @@ async function ordersLoop() {
 // ---- price board scanners ----
 // In game: search each watched item in /ah (cheapest first) and record the plain listings it shows.
 async function marketGuiLoop() {
+  let fails = 0;                                              // searches that failed in a row
   for (;;) {
     if (!market.on || !state.connected) { await sleep(2000); continue; }
     for (const item of watch.items.slice()) {
@@ -401,7 +402,12 @@ async function marketGuiLoop() {
           for (const [k, g] of groups) market.record(k, g.name, g.units, 'ingame');
           ah.close();
         });
-      } catch (e) { log(`market: ${item}: ${String(e.message).slice(0, 90)}`); }
+        fails = 0;
+      } catch (e) {
+        fails++;
+        log(`market: ${item}: ${String(e.message).slice(0, 200)}`);
+        if (fails >= 3) { const pause = Math.min(fails * 20, 120); log(`market: ${fails} failed searches in a row, pausing ${pause}s`); await withAh(async () => { ah.closeAll(); ah.closeRecent(); }); await sleep(pause * 1000); }
+      }
       await sleep(MARKET_MS);
     }
     market.passes++; market.current = null; market.save();
