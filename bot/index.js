@@ -31,8 +31,29 @@ const ledger = new Ledger(log);
 const market = new Market(log);
 const access = new Access(process.env, log);
 const orderBoard = new OrderBoard(log);
-const ORDERS_MS = +process.env.ORDERS_MS || 300000;      // how often the order house is read (ms)
-const ICON_DIR = path.join(process.cwd(), 'data', 'icons');
+const ORDERS_MS = +process.env.ORDERS_MS || 1800000;     // how often the whole order house is read (ms, 30 min)
+
+// Where the item pictures are. Normally data/icons, but a zip extracted by Windows often ends up one folder deeper,
+// so look a few levels down for a folder that has diamond.webp in it.
+let iconDir = null, iconChecked = 0;
+function findIconDir() {
+  const root = process.cwd(), has = (d) => { try { return fs.existsSync(path.join(d, 'diamond.webp')); } catch { return false; } };
+  for (const d of [path.join(root, 'data', 'icons'), path.join(root, 'icons'), path.join(root, '..', 'data', 'icons')]) if (has(d)) return d;
+  const skip = new Set(['node_modules', '.git']), queue = [[root, 0]];
+  while (queue.length) {
+    const [d, depth] = queue.shift();
+    if (has(d)) return d;
+    if (depth >= 4) continue;
+    let ents = []; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch {}
+    for (const e of ents) if (e.isDirectory() && !skip.has(e.name)) queue.push([path.join(d, e.name), depth + 1]);
+  }
+  return null;
+}
+function getIconDir() {
+  if (iconDir && fs.existsSync(iconDir)) return iconDir;
+  if (Date.now() - iconChecked > 10000) { iconChecked = Date.now(); iconDir = findIconDir(); if (iconDir) log('item pictures found in ' + iconDir); }
+  return iconDir;
+}
 const watch = new Watchlist();
 const MARKET_MS = +process.env.MARKET_MS || 7000;     // pause between in-game price searches (ms)
 // Only one auction-house job at a time. Trading, manual commands and the price scanner all share the same window.
@@ -261,6 +282,10 @@ async function runInner(line) {
       if (a[0] === 'remove') return { removed: watch.remove(a[1] || ''), watchlist: watch.items.length };
       return watch.items;
     }
+    case 'icons': { // icons: where the bot looks for the item pictures and how many it found
+      const dir = getIconDir(), count = dir ? fs.readdirSync(dir).filter((f) => f.endsWith('.webp')).length : 0;
+      return dir ? { folder: dir, pictures: count } : { folder: null, lookedIn: path.join(process.cwd(), 'data', 'icons'), how: 'Extract minecraft-icons-26.3.zip into the bot folder so that data\\icons\\diamond.webp exists, then refresh the page.' };
+    }
     case 'orders': { // orders on | off | status | scan
       if (a[0] === 'on') orderBoard.on = true; else if (a[0] === 'off') { orderBoard.on = false; orderBoard.save(); }
       else if (a[0] === 'scan') { if (!state.connected) return 'not connected yet'; await ordersOnce(); }
@@ -333,13 +358,18 @@ async function runInner(line) {
 }
 
 // ---- order house (top buy orders) ----
-// Runs inside the auction-house lock. Reads a few pages sorted by most per item and updates the board.
+// Reads EVERY page of the order house (sorted by most per item) and keeps the best price per item.
+// It holds the auction-house lock the whole time (a minute or two), so trading waits; hence once every 30 minutes.
 async function ordersOnce() {
   try {
-    const scan = await withAh(() => scanOrders(ah, { pages: +process.env.ORDERS_PAGES || 5 }));
+    log('orders: reading the whole order house, trading waits until it is done');
+    const scan = await withAh(() => scanOrders(ah, {
+      maxPages: +process.env.ORDERS_PAGES || 250, maxSeconds: +process.env.ORDERS_SECONDS || 420,
+      onPage: (best, n) => { orderBoard.progress = { page: n, items: best.size }; if (n % 10 === 0) applyScan(orderBoard, { items: best }, true); if (n % 50 === 0) log(`orders: page ${n}, ${best.size} items so far`); },
+    }));
     applyScan(orderBoard, scan);
     log('orders: ' + orderBoard.note);
-  } catch (e) { orderBoard.note = 'scan failed: ' + String(e.message).slice(0, 100); log('orders: ' + orderBoard.note); try { ah.closeAll(); } catch {} }
+  } catch (e) { orderBoard.progress = null; orderBoard.note = 'scan failed: ' + String(e.message).slice(0, 100); log('orders: ' + orderBoard.note); try { ah.closeAll(); } catch {} }
 }
 async function ordersLoop() {
   await sleep(20000);
@@ -413,7 +443,8 @@ http.createServer(async (req, res) => {
     }
     if (u.pathname.startsWith('/icons/')) {            // item pictures made by RenderChest (see HOW-TO-USE.md)
       const m = /^\/icons\/([a-z0-9_]+)\.webp$/.exec(u.pathname);
-      let file = null; try { file = m && fs.readFileSync(path.join(ICON_DIR, m[1] + '.webp')); } catch {}
+      const dir = getIconDir();
+      let file = null; try { file = m && dir && fs.readFileSync(path.join(dir, m[1] + '.webp')); } catch {}
       if (!file) { res.writeHead(404); return res.end(); }
       res.writeHead(200, { 'content-type': 'image/webp', 'cache-control': 'public, max-age=86400' }); return res.end(file);
     }
@@ -459,6 +490,7 @@ if (require.main === module) {
   setInterval(() => withAh(scan), SCAN_MS);
   if (KEY) marketApiLoop(); else marketGuiLoop();
   ordersLoop();
+  if (!getIconDir()) log('item pictures are not installed (optional). Type  icons  or read HOW-TO-USE.md, "Item pictures".');
   setInterval(() => market.save(), 120000);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: 'bot> ' });
   rl.prompt();

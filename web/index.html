@@ -44,6 +44,7 @@ body.public .botonly{display:none !important}
 .ico.big{width:44px;height:44px}
 .rank{color:var(--muted);font-variant-numeric:tabular-nums;width:2.2em;display:inline-block}
 tr.top1 .rank,tr.top2 .rank,tr.top3 .rank{color:var(--accent);font-weight:700}
+tr.stale td{opacity:.6}
 .hint{color:var(--muted);font-size:13px;margin:0 0 10px}
 .tabs{display:flex;gap:6px;margin:0 0 12px;border-bottom:1px solid var(--line)}
 .tab{all:unset;cursor:pointer;padding:9px 14px;border-bottom:3px solid transparent;color:var(--muted);font-weight:600}
@@ -130,6 +131,7 @@ td small{color:var(--muted)}
   </header>
 
   <div id="banner" class="banner" hidden></div>
+  <p class="hint" id="iconHint" hidden>Item pictures are not installed yet. Unzip <b>minecraft-icons-26.3.zip</b> into the bot folder so that <code>data\icons\diamond.webp</code> exists, then refresh this page. (The terminal command <code>icons</code> shows where the bot looks.)</p>
 
   <section class="cards" aria-label="Summary">
     <div class="card"><div class="k">Items tracked</div><div class="v" id="cTracked">–</div><div class="s" id="cScan">–</div></div>
@@ -187,7 +189,7 @@ td small{color:var(--muted)}
 
   <div id="viewOrders" role="tabpanel" aria-labelledby="tabOrders" hidden>
     <p class="hint">The highest price buyers are offering per item right now: the order house sorted by most per item.
-      Sell to an order to get that price for every item you deliver.</p>
+      Sell to an order to get that price for every item you deliver. Every item the order house lists gets a row.</p>
     <div class="toolbar">
       <input type="search" id="oq" placeholder="Search items (e.g. elytra)" aria-label="Search top orders">
       <select id="osort" aria-label="Sort top orders">
@@ -299,7 +301,7 @@ function nameWithIcon(key, text, big = false) {
   const w = el('span', { class: 'nm' }), i = icon(key, big); if (i) w.append(i);
   w.append(el('span', { text })); return w;
 }
-fetch('/icons/diamond.webp', { method: 'HEAD' }).then((r) => { S.icons = r.ok; if (S.icons) render(); }).catch(() => {});
+fetch('/icons/diamond.webp', { method: 'HEAD' }).then((r) => { S.icons = r.ok; if (S.icons) render(); else $('iconHint').hidden = false; }).catch(() => { $('iconHint').hidden = false; });
 async function get(path) { const r = await fetch(path, { cache: 'no-store' }); if (!r.ok) throw new Error(path + ' ' + r.status); return r.json(); }
 async function cmd(command) {
   const r = await fetch('/command', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bot': '1' }, body: JSON.stringify({ command }) });
@@ -510,11 +512,12 @@ function renderOrders() {
   let list = (S.orders.items || []).filter((o) => !q || o.name.toLowerCase().includes(q) || o.item.includes(q.replace(/\s+/g, '_')));
   const by = { top: (a, b) => b.top - a.top, low: (a, b) => a.top - b.top, demand: (a, b) => b.demand - a.demand, n: (a, b) => b.n - a.n, up: (a, b) => (b.change24h ?? -9) - (a.change24h ?? -9), name: (a, b) => a.name.localeCompare(b.name) }[S.osort];
   list = list.slice().sort(by);
-  $('oStatus').textContent = st.lastUpdate ? 'updated ' + ago(st.lastUpdate) : (st.note || 'not scanned yet');
+  $('oStatus').textContent = st.progress ? 'reading page ' + st.progress.page + ' · ' + st.progress.items + ' items so far' : st.lastUpdate ? (S.orders.items.length + ' items · updated ' + ago(st.lastUpdate)) : (st.note || 'not scanned yet');
   $('oStatus').title = st.note || '';
   const tb = $('oRows'); tb.textContent = '';
   list.forEach((o, idx) => {
-    const tr = el('tr', { class: idx < 3 && S.osort === 'top' && !q ? 'top' + (idx + 1) : '', tabindex: 0, 'aria-label': o.name });
+    const stale = Date.now() - o.updated > 2 * 3600000;      // not seen in the last full read for 2h: may be gone
+    const tr = el('tr', { class: (idx < 3 && S.osort === 'top' && !q ? 'top' + (idx + 1) + ' ' : '') + (stale ? 'stale' : ''), tabindex: 0, 'aria-label': o.name, title: stale ? 'Last seen ' + ago(o.updated) : '' });
     const nm = el('td', { class: 'name' }); nm.append(el('span', { class: 'rank', text: S.osort === 'top' ? String(idx + 1) : '' }), nameWithIcon(o.item, o.name)); tr.append(nm);
     tr.append(el('td', { text: fmt(o.top), title: full(o.top) + ' each' }));
     tr.append(el('td', { class: 'hide-sm', text: String(o.n) }));
@@ -527,7 +530,7 @@ function renderOrders() {
     tb.append(tr);
   });
   const em = $('oEmpty'); em.hidden = list.length > 0;
-  em.textContent = (S.orders.items || []).length ? 'No items match your search.' : 'No order data yet. ' + (st.note && st.note !== 'not scanned yet' ? st.note + '. ' : '') + 'The bot reads the order house every few minutes once it is in game.';
+  em.textContent = (S.orders.items || []).length ? 'No items match your search.' : (st.progress ? 'Reading the order house, items appear as pages are read. ' : 'No order data yet. ') + (st.note && st.note !== 'not scanned yet' ? st.note + '. ' : '') + 'The bot reads the whole order house every 30 minutes once it is in game, the first time shortly after it joins.';
 }
 function renderPortfolio() {
   $('pfCount').textContent = P.items.length ? '(' + P.items.length + ')' : '';

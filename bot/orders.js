@@ -2,6 +2,7 @@
 // Each order tile says "$ 700M each" and "3/10 delivered" in its tooltip. We open /orders, switch the sort to
 // "Most Per Item" so the best offers come first, read a few pages, and keep the best price per item.
 // Read-only: the only things clicked are the sort button and the next-page arrow, never an order.
+// One full read goes through every page (a minute or two), then the board keeps the best price per item.
 const fs = require('fs');
 const path = require('path');
 const { parsePrice, clean } = require('./strategy');
@@ -32,7 +33,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 class OrderBoard {
   constructor(log = () => {}) {
     this.log = log; this.items = {}; this.on = process.env.ORDERS !== '0'; this.last = null; this.lastSave = 0;
-    this.scans = 0; this.note = 'not scanned yet'; this.sorted = null;
+    this.scans = 0; this.note = 'not scanned yet'; this.sorted = null; this.progress = null;
     try { const j = JSON.parse(fs.readFileSync(FILE, 'utf8')); this.items = j.items || {}; this.last = j.last || null; } catch {}
   }
   record(key, name, { top, n, demand }) {
@@ -59,15 +60,26 @@ class OrderBoard {
     return Object.entries(this.items).map(([k, it]) => ({ item: k, name: it.name, top: it.top, n: it.n, demand: it.demand, updated: it.updated, change24h: this.change(it), spark: it.history.slice(-40).map((p) => p[1]) }))
       .sort((a, b) => b.top - a.top);
   }
-  status() { return { scanning: this.on, tracked: Object.keys(this.items).length, lastUpdate: this.last, scans: this.scans, sortedByPrice: this.sorted, note: this.note }; }
+  status() { return { scanning: this.on, tracked: Object.keys(this.items).length, lastUpdate: this.last, scans: this.scans, sortedByPrice: this.sorted, note: this.note, progress: this.progress }; }
 }
 
 // ---- reading the order house ----
-// `ah` is the auction-house driver (open, win, nameOf, textOf, clickItem, close).
-async function scanOrders(ah, { pages = 5, wait = 1500, log = () => {} } = {}) {
+// `ah` is the auction-house driver (open, win, nameOf, textOf, clickItem, closeAll).
+// The best offers come first when sorted by Most Per Item, but the first pages are mostly the same few pricey items
+// (elytra...), so to know the top order of EVERY item we read the whole order house, page after page, and keep the
+// highest price seen per item. onPage(best, pageNumber) is called as we go so the board can fill in while it runs.
+async function scanOrders(ah, { maxPages = 250, maxSeconds = 420, wait = 1500, pollMs = 120, onPage = () => {} } = {}) {
+  const started = Date.now();
   const tiles = () => (ah.win ? [...ah.win.slots].filter(([, it]) => it && it.network_id) : []);
   const info = (it) => ({ name: ah.nameOf(it), lines: ah.textOf(it) });
   const orders = () => tiles().map(([slot, it]) => ({ slot, it, ...info(it) })).map((t) => ({ ...t, o: parseTile(t.lines) })).filter((t) => t.o);
+  const fingerprint = () => orders().map((t) => t.slot + ':' + t.name + ':' + t.o.unit).join(',');
+  // wait until the page contents change (or give up after a few seconds)
+  const waitChange = async (before, ms = 3500) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { await sleep(pollMs); const now = fingerprint(); if (now && now !== before) { await sleep(pollMs); return true; } }
+    return false;
+  };
   await ah.open('/orders', 2);
   await sleep(wait / 2);
   let note = '', sorted = false;
@@ -78,40 +90,44 @@ async function scanOrders(ah, { pages = 5, wait = 1500, log = () => {} } = {}) {
     if (nonIncreasing(prices)) { sorted = true; break; }
     const btn = tiles().find(([, it]) => { const i = info(it); return !parseTile(i.lines) && /most per item/i.test(i.lines.join(' ')); });
     if (!btn) { note = 'no sort button found; reading the page as it is'; break; }
+    const before = fingerprint();
     ah.clickItem(btn[1], btn[0]);
-    await sleep(wait);
+    await waitChange(before, wait * 2);
   }
   if (!sorted && !note) note = 'could not switch to "Most Per Item"';
 
-  // 2) read pages
+  // 2) read every page
   const best = new Map();           // item key -> { name, units: [], demand }
-  let read = 0;
-  for (let p = 0; p < pages; p++) {
+  let read = 0, ended = 'last page reached';
+  for (let p = 0; p < maxPages; p++) {
     const page = orders();
-    if (!page.length) break;
+    if (!page.length) { ended = 'a page had no orders'; break; }
     read++;
     for (const t of page) {
       const key = clean(t.name); if (!key) continue;
       const e = best.get(key) || { name: t.name, units: [], demand: 0 };
       e.units.push(t.o.unit); e.demand += t.o.remaining; best.set(key, e);
     }
+    onPage(best, read);
+    if ((Date.now() - started) / 1000 > maxSeconds) { ended = 'stopped after ' + maxSeconds + 's, will continue next time'; break; }
     const next = tiles().find(([, it]) => { const i = info(it); return !parseTile(i.lines) && /^(next|next page|>|→)$/i.test(i.name.trim()); })
       || tiles().find(([, it]) => { const i = info(it); return !parseTile(i.lines) && /next page/i.test(i.lines.join(' ')); });
-    if (!next || p === pages - 1) break;
-    const before = page.map((t) => t.slot + ':' + t.o.unit).join(',');
+    if (!next) break;
+    const before = fingerprint();
     ah.clickItem(next[1], next[0]);
-    await sleep(wait);
-    const after = orders().map((t) => t.slot + ':' + t.o.unit).join(',');
-    if (after === before) { note = note || 'next page did not change the list'; break; }
+    if (!(await waitChange(before))) break;       // the page did not change: that was the last one
   }
   ah.closeAll();
-  return { items: best, pages: read, sorted, note };
+  return { items: best, pages: read, sorted, note: [note, read >= maxPages ? 'page limit reached' : ended].filter(Boolean).join('; ') };
 }
 
-function applyScan(board, scan) {
+// Record what a scan found. `partial` = still running, don't count it as a finished scan.
+function applyScan(board, scan, partial = false) {
   for (const [key, e] of scan.items) board.record(key, e.name, { top: Math.max(...e.units), n: e.units.length, demand: e.demand });
+  if (partial) return;
   board.scans++; board.sorted = scan.sorted;
-  board.note = scan.items.size ? `read ${scan.pages} page${scan.pages === 1 ? '' : 's'}, ${scan.items.size} items${scan.note ? ' (' + scan.note + ')' : ''}` : (scan.note || 'no orders found on the page');
+  board.note = scan.items.size ? `read ${scan.pages} page${scan.pages === 1 ? '' : 's'}, ${scan.items.size} items (${scan.note})` : (scan.note || 'no orders found on the page');
+  board.progress = null;
   board.save();
 }
 
