@@ -269,7 +269,43 @@ In a second Command Prompt window run `cloudflared tunnel --url http://127.0.0.1
 `https://something.trycloudflare.com` link; open it on your phone and log in. Anyone who has the link sees the login page,
 so use a long unique password and close the tunnel when you are not using it.
 
-**Option C: your own DuckDNS address, with no port in it**
+**Option C2: a DuckDNS name for your Tailscale address (private, no router changes)**
+
+This is Option A (Tailscale) with a name you can remember instead of `100.64.1.2:8080`. Only your own Tailscale devices
+can reach it, nothing is opened on your router, and your home address stays hidden. DuckDNS just gives you the name
+`yourname.duckdns.org`.
+
+1. Do Option A first, so you have a Tailscale address (`tailscale ip -4`, like `100.64.1.2`).
+2. On <https://www.duckdns.org> set your name's **current ip** to that **Tailscale address** (not your home address) and
+   press update. **Stop any DuckDNS updater** you have running, because it would put your home address back every few minutes.
+3. Check it: in Command Prompt `nslookup yourname.duckdns.org` should show the Tailscale address.
+4. Pick how you open it:
+
+   - **Simplest, plain http** (safe, because Tailscale already encrypts everything between your devices):
+```
+set BOT_HOST=100.64.1.2
+set BOT_API_PORT=80
+set BOT_PASSWORD=long-team-password
+npm run bot
+```
+     then open `http://yourname.duckdns.org` (type the `http://`). Port 80 must be free on the PC (not used by IIS or similar).
+
+   - **With real https and no warnings**, using Caddy: you need a Caddy download that includes the **DuckDNS DNS module**
+     (<https://caddyserver.com/download>, tick `caddy-dns/duckdns`). Copy `tools\Caddyfile.tailscale.example` to `Caddyfile`, put
+     your DuckDNS name and Tailscale address in it, then in one Command Prompt:
+```
+set BOT_PASSWORD=long-team-password
+set BOT_COOKIE_SECURE=1
+npm run bot
+```
+     and in a second one: `set DUCKDNS_TOKEN=your-token` then `caddy run --config Caddyfile`. Open `https://yourname.duckdns.org`.
+     Here the bot stays on `127.0.0.1:8080` (leave `BOT_HOST` alone); Caddy listens only on your Tailscale address.
+
+If it opens on mobile data but not on your home Wi-Fi, your router is blocking a public name that points at a private address
+("DNS rebind protection"). Turn that protection off for your DuckDNS name in the router, or at home use the plain Tailscale
+address. Everything in the "How it is protected" list below still applies.
+
+**Option C: your own DuckDNS address, with no port in it (public, opens your router)**
 
 DuckDNS only points a name at your home address; it cannot hide the port. To open `https://yourname.duckdns.org` with no
 `:8080`, the site has to be on the standard web ports (443 for https, 80 for the certificate check). Do **not** just set
@@ -400,7 +436,8 @@ delete `data/auth`.
 | `bot/market.js` | price board and watchlist |
 | `bot/orders.js` | reads the order house (`/orders`) and keeps the top buy order per item |
 | `tools/make-icons.sh` | makes the item pictures with RenderChest into `data/icons` |
-| `tools/Caddyfile.example` | three-line Caddy config for `https://yourname.duckdns.org` without a port |
+| `tools/Caddyfile.example` | Caddy config for a public `https://yourname.duckdns.org` (router forwarding) |
+| `tools/Caddyfile.tailscale.example` | Caddy config for `https://yourname.duckdns.org` that points at your Tailscale address (private) |
 | `bot/access.js` | website login, view-only mode and the rules for who may reach the bot |
 | `web/index.html` | the price website |
 | `bot/*-patch.js` | fixes for login and network libraries |

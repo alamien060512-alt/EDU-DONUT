@@ -1,0 +1,22 @@
+# A DuckDNS name that points at your Tailscale address, with real https and no port:  https://YOURNAME.duckdns.org
+# Only your own Tailscale devices can reach it. Nothing is opened on your router.
+#
+# Needs a Caddy that includes the DuckDNS DNS module (download it from https://caddyserver.com/download, tick
+# "caddy-dns/duckdns"), because the https certificate is proven through DuckDNS's DNS (your Tailscale address is private,
+# so the usual web check cannot work).
+#
+# 1. Replace YOURNAME with your DuckDNS name, and 100.64.1.2 with your Tailscale address (tailscale ip -4).
+# 2. In the Command Prompt that runs Caddy:  set DUCKDNS_TOKEN=your-duckdns-token   (the token on the duckdns.org page)
+# 3. Copy this file to a file called  Caddyfile  and run:  caddy run --config Caddyfile
+# See HOW-TO-USE.md, section 9, "Option C2".
+
+YOURNAME.duckdns.org {
+	bind 100.64.1.2
+	tls {
+		dns duckdns {env.DUCKDNS_TOKEN}
+	}
+	request_body {
+		max_size 10KB
+	}
+	reverse_proxy 127.0.0.1:8080
+}

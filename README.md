@@ -20,7 +20,7 @@ writes an XLSX trade log.
 - [x] Item pictures next to every name, rendered with [RenderChest](https://github.com/aternosorg/renderchest)
 - [x] Top orders tab: the highest buy-order price per item from the order house
 - [x] Personal portfolio on the website (items, how many you own, profit/loss, price alerts), saved separately in each browser
-- [x] Safe remote access (team password login, optional public price pages, view-only by default, works over Tailscale, a Cloudflare Tunnel, or your own DuckDNS address with automatic https through Caddy)
+- [x] Safe remote access (team password login, optional public price pages, view-only by default, works over Tailscale (optionally with a DuckDNS name for it), a Cloudflare Tunnel, or a public DuckDNS address with automatic https through Caddy)
 
 ## Quick start
 
