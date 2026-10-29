@@ -428,9 +428,10 @@ async function recover(why) {
     return await withAh(async () => {
       ah.closeAll(); ah.closeRecent();
       const v = await balance(+process.env.RECOVER_BAL_MS || 6000);
-      if (v > 0) {
+      const quiet = Date.now() - (ah.lastPacketAt || 0) > 20000;     // nothing at all from the server for 20 s = really dead
+      if (v > 0 || !quiet) {
         scannersPausedUntil = Date.now() + (+process.env.RECOVER_PAUSE_MS || 300000);
-        log(`recover (${why}): connection is alive (/bal answered) but the server ignores /ah and /orders; scanners rest ${Math.round((scannersPausedUntil - Date.now()) / 60000)} min`);
+        log(`recover (${why}): connection is alive (${v > 0 ? '/bal answered' : 'packets still arriving, /bal unanswered'}) but the server ignores commands like /ah and /orders; scanners rest ${Math.round((scannersPausedUntil - Date.now()) / 60000)} min`);
         return 'alive';
       }
       log(`recover (${why}): no answer to /bal, the connection looks dead; reconnecting`);

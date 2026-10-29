@@ -5,7 +5,7 @@ Object.assign(process.env, { BOT_API_PORT: '8268', MARKET: '0', RECOVER_BAL_MS: 
 const { state, _test } = require('./index');
 
 (async () => {
-  const make = (answers) => ({ closed: 0, closeAll() {}, closeRecent() {}, close() {}, say(c) { if (answers && /bal/.test(c)) state.recentChat.push({ t: Date.now() + 1, msg: 'You have $ 1,478,100' }); } });
+  const make = (answers) => ({ lastPacketAt: Date.now(), closed: 0, closeAll() {}, closeRecent() {}, close() {}, say(c) { if (answers && /bal/.test(c)) state.recentChat.push({ t: Date.now() + 1, msg: 'You have $ 1,478,100' }); } });
   let closed = 0;
   _test.setClient({ close: () => { closed++; } });
 
@@ -14,7 +14,11 @@ const { state, _test } = require('./index');
   assert(_test.scannersResting(), 'scanners should rest when the server answers /bal');
   assert.strictEqual(closed, 0);
 
-  _test.rest(); _test.setAh(make(false));
+  _test.rest(); const mid = make(false); _test.setAh(mid);
+  assert.strictEqual(await _test.recover('test'), 'alive', 'packets still flowing: not dead');
+  assert.strictEqual(closed, 0);
+
+  _test.rest(); const dead = make(false); dead.lastPacketAt = Date.now() - 60000; _test.setAh(dead);
   assert.strictEqual(await _test.recover('test'), 'dead');
   assert(!_test.scannersResting());
   assert.strictEqual(closed, 1, 'a dead link must be closed so the reconnect starts');
