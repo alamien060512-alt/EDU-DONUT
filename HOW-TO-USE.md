@@ -17,7 +17,7 @@ You need a computer (Windows, Mac or Linux). A phone/Termux is not recommended.
 2. Open Command Prompt (Windows) or a terminal and run:
 
 ```
-git clone -b ccr-c8cd5cd4-2gu6l0 https://github.com/alamien060512-alt/DonutsmpTrend
+git clone -b main https://github.com/alamien060512-alt/EDU-DONUT
 cd DonutsmpTrend
 npm install
 ```
