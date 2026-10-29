@@ -1,9 +1,15 @@
 {
-  "name": "donutsmp-trend",
+  "name": "edu-donut",
   "version": "1.0.0",
-  "description": "",
+  "description": "Educational headless Minecraft Bedrock bot: Xbox login, console commands, automatic auction actions, XLSX trade log and a local price website.",
+  "private": true,
+  "license": "MIT",
+  "author": "ImHungry1480",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "start": "node server.js",
+    "start": "node bot/index.js",
     "bot": "node bot/index.js",
     "test": "node bot/test.js && node bot/test-order.js && node bot/test-crypto.js && node bot/test-inv.js && node bot/test-ledger.js && node bot/test-market.js",
     "pinghandshake": "node bot/pinghandshake.js",
@@ -11,15 +17,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alamien060512-alt/DonutsmpTrend.git"
+    "url": "git+https://github.com/alamien060512-alt/EDU-DONUT.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "bugs": {
-    "url": "https://github.com/alamien060512-alt/DonutsmpTrend/issues"
+    "url": "https://github.com/alamien060512-alt/EDU-DONUT/issues"
   },
-  "homepage": "https://github.com/alamien060512-alt/DonutsmpTrend#readme",
+  "homepage": "https://github.com/alamien060512-alt/EDU-DONUT#readme",
   "dependencies": {
     "bedrock-protocol": "^3.60.1",
     "exceljs": "^4.4.0"

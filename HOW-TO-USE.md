@@ -1,6 +1,6 @@
 # DonutSMP Bedrock Auction Bot: how to use
 
-A headless bot that logs in with your Microsoft/Xbox (Bedrock) account, watches the DonutSMP auction house,
+An educational headless bot that logs in with your Microsoft/Xbox (Bedrock) account, watches the DonutSMP auction house,
 buys items under your price, relists them for more, records every trade in a spreadsheet, and serves a
 price website.
 
@@ -18,7 +18,7 @@ You need a computer (Windows, Mac or Linux). A phone/Termux is not recommended.
 
 ```
 git clone -b main https://github.com/alamien060512-alt/EDU-DONUT
-cd DonutsmpTrend
+cd EDU-DONUT
 npm install
 ```
 
@@ -27,11 +27,12 @@ npm install
 Run this inside the bot folder:
 
 ```
-git pull https://github.com/alamien060512-alt/DonutsmpTrend ccr-c8cd5cd4-2gu6l0
+git pull
 ```
 
-- If it says local changes to `package-lock.json` block it: `git checkout package-lock.json`, then pull again.
-- If the update says to run it, also run `npm install` (needed when a new library was added).
+- If it says local changes to `package-lock.json` block it, run `git checkout package-lock.json` and pull again.
+- If the update notes say so, also run `npm install` (needed when a new library was added).
+- Your login and trades live in the `data` folder, which git never touches, so updating does not log you out.
 
 ## 3. Start the bot
 
@@ -192,7 +193,13 @@ Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `
 | `sendto failed ... length 1464` | harmless network warning |
 | Listings count wrong after restart | run `listed <n>` with your real number |
 
-## 11. Files
+## 11. Privacy
+
+The `data` folder inside the bot folder holds your **Xbox login tokens** (`data/auth`), your trades and your
+price history. Never share it or upload it (it is in `.gitignore`, so `git add .` skips it). To log out,
+delete `data/auth`.
+
+## 12. Files
 
 | File | Purpose |
 |---|---|
@@ -204,3 +211,4 @@ Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `
 | `web/index.html` | the price website |
 | `bot/*-patch.js` | fixes for login and network libraries |
 | `npm test` | offline tests of the logic above |
+| `.gitignore` | keeps `data/` (login tokens) and `node_modules/` out of git |

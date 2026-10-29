@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# the bot's local data: Xbox login tokens (data/auth), trades, price history, spreadsheet.
+# NEVER commit or share this folder.
+data/
+
+# secrets and local config
+.env
+.env.*
+
+# logs and temp files
+*.log
+*.tmp
+debug.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

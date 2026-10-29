@@ -10,7 +10,6 @@ const DIR = path.join(process.cwd(), 'data');
 const JSON_FILE = path.join(DIR, 'trades.json');
 const CSV_FILE = path.join(DIR, 'trades.csv');
 const XLSX_FILE = path.join(DIR, 'profit-vs-cost.xlsx');
-const SEED = path.join(__dirname, 'seed-trades.json');
 const MAX_ROWS = 500;
 
 const norm = (n) => clean(n).replace(/s$/, '');          // "Diamonds" == "diamond"
@@ -22,9 +21,7 @@ class Ledger {
     this.busy = false; this.dirty = false;
     this.d = { fee: 0, startBalance: null, lastBalance: null, nextId: 1, trades: [] };
     try { fs.mkdirSync(DIR, { recursive: true }); } catch {}
-    for (const f of [JSON_FILE, SEED]) {
-      try { this.d = { ...this.d, ...JSON.parse(fs.readFileSync(f, 'utf8')) }; break; } catch {}
-    }
+    try { this.d = { ...this.d, ...JSON.parse(fs.readFileSync(JSON_FILE, 'utf8')) }; } catch {}   // first run: starts empty
   }
   // ---- recording ----
   balance(n) { if (n > 0) { this.d.lastBalance = n; this.save(); } }
