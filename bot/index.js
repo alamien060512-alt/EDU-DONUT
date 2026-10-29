@@ -468,8 +468,11 @@ async function marketGuiLoop() {
   let fails = 0;                                              // searches that failed in a row
   for (;;) {
     if (!market.on || !state.connected || scannersResting()) { await sleep(2000); continue; }
-    for (const item of watch.items.slice()) {
+    // stalest first, so a restart or a rest never keeps refreshing the same first few items while the rest go old
+    const age = (i) => { const r = market.items[clean(i)]; return r && r.updated ? r.updated : 0; };
+    for (const item of watch.items.slice().sort((a, b) => age(a) - age(b))) {
       if (!market.on || !state.connected) break;
+      while (scannersResting() && market.on && state.connected) await sleep(2000);
       market.current = item;
       try { await marketSearch(item); fails = 0; }
       catch (e) {
