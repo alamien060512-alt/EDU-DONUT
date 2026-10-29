@@ -181,10 +181,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function waitFor(pred, ms) { const end = Date.now() + ms; while (Date.now() < end) { const v = pred(); if (v) return v; await sleep(100); } return null; }
 
 // Gets the balance by running /bal and reading "You have $ 1,478,100".
-async function balance() {
+async function balance(ms = 4000) {
   const since = Date.now();
   ah.say('/bal');
-  const m = await waitFor(() => state.recentChat.find((c) => c.t >= since && /you have \$\s*([\d,\.]+)/i.test(c.msg)), 4000);
+  const m = await waitFor(() => state.recentChat.find((c) => c.t >= since && /you have \$\s*([\d,\.]+)/i.test(c.msg)), ms);
   const v = m ? parseFloat(/you have \$\s*([\d,\.]+)/i.exec(m.msg)[1].replace(/,/g, '')) : NaN;
   if (v > 0) ledger.balance(v);
   return v;
@@ -401,6 +401,7 @@ async function ordersOnce(manual = false) {
   } catch (e) {
     sweep = null; orderBoard.progress = null; orderBoard.note = 'scan failed: ' + String(e.message).slice(0, 100); log('orders: ' + orderBoard.note);
     try { ah.closeAll(); } catch {}
+    if (/timeout waiting for the window/.test(e.message)) recover('orders').catch(() => {});
     return 'failed';
   } finally { ordersRunning = false; }
 }
@@ -408,7 +409,7 @@ async function ordersLoop() {
   await sleep(20000);
   for (;;) {
     let wait = 3000;
-    if (orderBoard.on && state.connected) {
+    if (orderBoard.on && state.connected && !scannersResting()) {
       const r = await ordersOnce();
       if (r === 'paused') wait = 4000;                                  // trading had its turn, carry on soon
       else if (r !== 'busy') { orderBoard.nextAt = Date.now() + ORDERS_MS; wait = ORDERS_MS; }
@@ -416,6 +417,29 @@ async function ordersLoop() {
     await sleep(wait);
   }
 }
+
+// After repeated window timeouts: ask /bal. A reply means the link is fine and the server just ignores /ah and /orders,
+// so the scanners rest for a while. No reply means the link is dead, so drop it and let the reconnect take over.
+let scannersPausedUntil = 0, recovering = false;
+async function recover(why) {
+  if (recovering) return 'busy';
+  recovering = true;
+  try {
+    return await withAh(async () => {
+      ah.closeAll(); ah.closeRecent();
+      const v = await balance(+process.env.RECOVER_BAL_MS || 6000);
+      if (v > 0) {
+        scannersPausedUntil = Date.now() + (+process.env.RECOVER_PAUSE_MS || 300000);
+        log(`recover (${why}): connection is alive (/bal answered) but the server ignores /ah and /orders; scanners rest ${Math.round((scannersPausedUntil - Date.now()) / 60000)} min`);
+        return 'alive';
+      }
+      log(`recover (${why}): no answer to /bal, the connection looks dead; reconnecting`);
+      state.connected = false; try { client.close(); } catch {}
+      return 'dead';
+    });
+  } finally { recovering = false; }
+}
+const scannersResting = () => Date.now() < scannersPausedUntil;
 
 // ---- price board scanners ----
 // In game: search each watched item in /ah (cheapest first) and record the plain listings it shows.
@@ -442,7 +466,7 @@ async function marketSearch(item) {
 async function marketGuiLoop() {
   let fails = 0;                                              // searches that failed in a row
   for (;;) {
-    if (!market.on || !state.connected) { await sleep(2000); continue; }
+    if (!market.on || !state.connected || scannersResting()) { await sleep(2000); continue; }
     for (const item of watch.items.slice()) {
       if (!market.on || !state.connected) break;
       market.current = item;
@@ -450,7 +474,7 @@ async function marketGuiLoop() {
       catch (e) {
         fails++;
         log(`market: ${item}: ${String(e.message).slice(0, 200)}`);
-        if (fails >= 3) { const pause = Math.min(fails * 20, 120); log(`market: ${fails} failed searches in a row, pausing ${pause}s`); await withAh(async () => { ah.closeAll(); ah.closeRecent(); }); await sleep(pause * 1000); }
+        if (fails >= 3) { log(`market: ${fails} failed searches in a row`); await recover('market'); fails = 0; }
       }
       await sleep(MARKET_MS);
     }
@@ -569,4 +593,4 @@ if (require.main === module) {
   rl.prompt();
   rl.on('line', async (l) => { try { const r = await run(l); console.log(typeof r === 'string' ? r : JSON.stringify(r, null, 1)); } catch (e) { console.log('error:', e.message); } rl.prompt(); });
 }
-module.exports = { run, rules, state, _test: { setAh: (x) => { ah = x; state.connected = true; }, market, watch, orderBoard, ordersOnce, withAh } };
+module.exports = { run, rules, state, _test: { setAh: (x) => { ah = x; state.connected = true; }, market, watch, orderBoard, ordersOnce, withAh, recover, setClient: (c) => { client = c; }, scannersResting, rest: () => { scannersPausedUntil = 0; } } };

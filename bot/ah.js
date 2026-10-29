@@ -18,6 +18,7 @@ class AhDriver {
     const noisyName = /chunk|entity|time|latency|attributes|level_|sound|move_|block|biome|score|player_list|add_player|animate|actor|tick|particle|event|camera|health|mob_|network_stack|update_soft_enum|available_commands|commands/;
     client.on('packet', (d) => {
       const n = d && d.data && d.data.name; if (!n) return;
+      this.lastPacketAt = Date.now();
       this.pkts[n] = (this.pkts[n] || 0) + 1;
       const pr = d.data.params || {};
       if (n === 'set_title' && !String(pr.text || '').trim()) return;    // empty title packets are just noise
@@ -99,7 +100,7 @@ class AhDriver {
       try { await this._until(() => this.win && this.win.slots.size > 0, 6000); return this.win; }
       catch { last = this.timeline.slice(mark).filter((l) => !/inventory_|container_close/.test(l)).slice(-6).join(' | ') || '(server sent nothing)'; }
     }
-    throw new Error('timeout waiting for the window after ' + tries + ' tries. Server said: ' + last);
+    throw new Error('timeout waiting for the window after ' + tries + ' tries. Server said: ' + last + ' (last packet from the server ' + Math.round((Date.now() - (this.lastPacketAt || 0)) / 1000) + 's ago)');
   }
   nameOf(it) { return clean(it && (it.network_id ? it.__name || it.name : '') || ''); }
   // Click an item in a chest-style window. A Java left click is a "take into cursor" on Bedrock.

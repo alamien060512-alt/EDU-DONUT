@@ -410,7 +410,7 @@ Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `
 | `Missing script` or old behavior | run the update command (section 2) |
 | Microsoft sign-in fails | `rmdir /s data\auth` (Windows) or `rm -rf data/auth`, start again, enter the new code quickly |
 | `Checksum mismatch` or connect timeout | use a computer, not a phone/Termux; try Wi-Fi |
-| `scan failed ... timeout waiting for the window` | the server did not open `/ah`; the bot retries; if it keeps happening, `pause` for a minute |
+| `timeout waiting for the window ... Server said: (server sent nothing)` | the server did not open `/ah` or `/orders`. After 3 in a row the bot asks `/bal`: if that answers, it logs `recover ... server ignores /ah and /orders` and rests the price and order scanners for 5 minutes; if not, it logs the link looks dead and reconnects. The message ends with how many seconds ago the last packet arrived. Still failing? Run `market off`, `orders off`, wait a minute, then `peek diamond` |
 | `no confirm menu appeared` | the listing was sold or the click was refused; the bot cancels safely |
 | `spreadsheet not updated` | close `profit-vs-cost.xlsx` in Excel |
 | `forbidden: this bot has no password` in the browser | you reached the bot through a tunnel or proxy; set `BOT_PASSWORD` first |
