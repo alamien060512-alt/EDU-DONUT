@@ -17,6 +17,7 @@ const call = (port, opts = {}) => new Promise((resolve, reject) => {
   });
   r.on('error', reject); if (body) r.write(body); r.end();
 });
+const form2 = (pw) => ({ method: 'POST', path: '/login', body: 'password=' + encodeURIComponent(pw), headers: { 'content-type': 'application/x-www-form-urlencoded' } });
 const form = (pw) => ({ method: 'POST', path: '/login', body: 'password=' + encodeURIComponent(pw), headers: { 'content-type': 'application/x-www-form-urlencoded' } });
 
 (async () => {
@@ -55,6 +56,34 @@ const form = (pw) => ({ method: 'POST', path: '/login', body: 'password=' + enco
   assert.strictEqual((await call(s.port, form('correct horse battery'))).status, 429);
   s.srv.close();
 
-  assert.strictEqual(new Access({ BOT_PASSWORD: 'correct horse battery', BOT_REMOTE_CONTROL: '1' }).canControl(), true);
+  assert.strictEqual(new Access({ BOT_PASSWORD: 'correct horse battery', BOT_REMOTE_CONTROL: '1' }).canControl({ role: 'team' }), true);
+  assert.strictEqual(new Access({ BOT_PASSWORD: 'correct horse battery', BOT_REMOTE_CONTROL: '1' }).canControl({ role: 'viewer' }), false);   // viewers never send commands
+  assert.strictEqual(new Access({ BOT_PASSWORD: 'correct horse battery' }).canControl({ role: 'team' }), false);                              // team needs the switch too
+
+  // public prices + team + viewer
+  const logs2 = [];
+  assert.strictEqual(new Access({ BOT_PUBLIC: '1' }, (m) => logs2.push(m)).publicMode, false);       // needs a password
+  a = new Access({ BOT_PASSWORD: 'team password here', BOT_VIEW_PASSWORD: 'viewer password here', BOT_PUBLIC: '1', BOT_REMOTE_CONTROL: '1' });
+  const seen = []; const srv2 = http.createServer(async (req, res) => { const u = new URL(req.url, 'http://x'); if (await a.gate(req, res, u)) return; seen.push(req.role); res.writeHead(200); res.end(req.role); });
+  await new Promise((r) => srv2.listen(0, '127.0.0.1', r)); const port2 = srv2.address().port;
+  assert.strictEqual((await call(port2, { path: '/market' })).body, 'public');                          // prices need no login
+  assert.strictEqual((await call(port2, { path: '/market/diamond' })).body, 'public');
+  assert.strictEqual((await call(port2, { path: '/session' })).body, 'public');
+  assert.strictEqual((await call(port2, { path: '/trades', headers: { accept: 'application/json' } })).status, 401);   // bot data does not
+  for (const path of ['/rules', '/log', '/holdings', '/status', '/prices']) assert.strictEqual((await call(port2, { path, headers: { accept: 'application/json' } })).status, 401, path);
+  assert.strictEqual((await call(port2, { path: '/command', method: 'POST', headers: { accept: 'application/json' } })).status, 401);
+  const team = await call(port2, form2('team password here')); const tc = team.headers['set-cookie'][0].split(';')[0];
+  assert.strictEqual((await call(port2, { path: '/trades', headers: { cookie: tc } })).body, 'team');
+  const viewer = await call(port2, form2('viewer password here')); const vc = viewer.headers['set-cookie'][0].split(';')[0];
+  assert.strictEqual((await call(port2, { path: '/trades', headers: { cookie: vc } })).body, 'viewer');
+  assert.strictEqual(a.canControl({ role: 'viewer' }), false); assert.strictEqual(a.canControl({ role: 'team' }), true);
+  // public visitors are rate limited per address; a tunnel's real address comes from the header
+  const fake = (h) => ({ socket: { remoteAddress: '127.0.0.1' }, headers: h });
+  assert.strictEqual(a.clientIp(fake({ 'cf-connecting-ip': '9.9.9.9' })), '9.9.9.9');
+  assert.strictEqual(a.clientIp({ socket: { remoteAddress: '8.8.8.8' }, headers: { 'cf-connecting-ip': '9.9.9.9' } }), '8.8.8.8'); // header ignored when not from this computer
+  let limited = 0; for (let i = 0; i < 260; i++) if (a.rateLimited('1.1.1.1')) limited++;
+  assert.ok(limited >= 15);
+  srv2.close();
+
   console.log('access ok');
 })().catch((e) => { console.error(e); process.exit(1); });

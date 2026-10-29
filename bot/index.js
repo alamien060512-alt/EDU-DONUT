@@ -378,13 +378,17 @@ http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html')));
     }
-    if (u.pathname === '/session') return send({ auth: access.passwordMode, readOnly: !access.canControl() });
+    if (u.pathname === '/session') return send({ auth: access.passwordMode, role: req.role, publicMode: access.publicMode, readOnly: !access.canControl(req) });
     if (u.pathname === '/status') return send({ connected: state.connected, live: state.live, spent: state.spent, listed: state.listed, maxListings: state.maxListings, paused: state.paused });
     if (u.pathname === '/rules') return send(rules.list());
     if (u.pathname === '/log') return send(state.log);
     if (u.pathname === '/holdings') return send(state.holdings);
     if (u.pathname === '/prices') return send(state.prices);
-    if (u.pathname === '/market') return send({ status: market.status(watch), items: market.list() });
+    if (u.pathname === '/market') {
+      const st = market.status(watch);
+      if (req.role === 'public') { delete st.current; delete st.passes; }       // visitors don't need to see what the bot is doing
+      return send({ status: st, items: market.list() });
+    }
     if (u.pathname.startsWith('/market/')) { const m = market.get(decodeURIComponent(u.pathname.slice(8))); return m ? send(m) : send({ error: 'unknown item' }, 404); }
     if (u.pathname === '/trades') {
       const S = ledger.summary();
@@ -393,13 +397,13 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/command' && req.method === 'POST') {
       // Commands can spend money, so only the bot's own page (or curl) may send them, never some other website.
       if (!access.sameOrigin(req) || req.headers['x-bot'] !== '1') return send({ error: 'forbidden: commands only from the bot page (send header X-Bot: 1)' }, 403);
-      if (!access.canControl()) return send({ error: 'view only: start the bot with BOT_REMOTE_CONTROL=1 to send commands from the website' }, 403);
+      if (!access.canControl(req)) return send({ error: 'view only: only the team login can send commands, and only when the bot was started with BOT_REMOTE_CONTROL=1' }, 403);
       let b = ''; for await (const d of req) b += d;
       return send({ result: await run(JSON.parse(b).command) });
     }
     send({ error: 'not found', routes: ['/', '/session', '/market', '/market/<item>', '/trades', '/status', '/rules', '/log', '/holdings', '/prices', 'POST /command (header X-Bot: 1)'] }, 404);
   } catch (e) { send({ error: e.message }, 400); }
-}).listen(API_PORT, access.host, () => log(`Website + API on http://${access.host}:${API_PORT}` + (access.passwordMode ? ` (password protected, ${access.canControl() ? 'remote control ON' : 'view only'})` : '')));
+}).listen(API_PORT, access.host, () => log(`Website + API on http://${access.host}:${API_PORT}` + (access.passwordMode ? ` (password protected${access.publicMode ? ', public prices ON' : ''}, ${access.remoteControl ? 'team can send commands' : 'view only'})` : '')));
 
 if (require.main === module) {
   if (!KEY) console.log('No API key: reading the auction house in game instead.');

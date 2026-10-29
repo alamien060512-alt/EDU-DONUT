@@ -199,14 +199,41 @@ In a second Command Prompt window run `cloudflared tunnel --url http://127.0.0.1
 `https://something.trycloudflare.com` link; open it on your phone and log in. Anyone who has the link sees the login page,
 so use a long unique password and close the tunnel when you are not using it.
 
+**Public prices for everyone, bot data only for your team**
+
+You can let anyone open the price pages without signing in, while keeping the bot's own data and commands behind a login:
+
+| Who | How they get in | What they see |
+|---|---|---|
+| Anyone with the link | no login (needs `BOT_PUBLIC=1`) | item prices, price history and item details only |
+| Your teammate | **Team sign in** with `BOT_PASSWORD` | everything: profit, trades, rules, log, bot status, and bot commands (if `BOT_REMOTE_CONTROL=1`) |
+| Optional read-only teammate | **Team sign in** with `BOT_VIEW_PASSWORD` | the same bot data, but no commands |
+
+Steps (Windows Command Prompt), using a Cloudflare Tunnel so the link works for people who are not on your Tailscale:
+
+1. Start the bot:
+```
+set BOT_PASSWORD=long-team-password
+set BOT_PUBLIC=1
+set BOT_REMOTE_CONTROL=1
+npm run bot
+```
+2. In a second Command Prompt window: `cloudflared tunnel --url http://127.0.0.1:8080`. It prints an `https://...trycloudflare.com` link.
+3. Send that link to anyone. They see only item prices. Your teammate opens the same link, clicks **Team sign in** and enters
+   the team password to see the bot data and use bot commands.
+4. Want a teammate who can look but not touch? Also `set BOT_VIEW_PASSWORD=another-long-password` and give them that one.
+
+Leave out `BOT_REMOTE_CONTROL=1` if the teammate should not be able to send commands. Public visitors are rate limited per address.
+Tailscale (option A) is private, so use it when only your own devices need access; use the tunnel when the public should see prices.
+
 **How it is protected**
 
 - The bot **refuses to open beyond this computer without `BOT_PASSWORD`** (8 or more characters).
 - With a password set, every page and API call needs a login. After 5 wrong passwords an address is locked out for 10 minutes.
 - The login cookie is `HttpOnly` and `SameSite=Strict`. Sessions last 7 days and end when the bot restarts.
 - **View only by default:** from the website you can look at prices, history and trades, but not send commands.
-  Set `BOT_REMOTE_CONTROL=1` to allow rules and scanning from the website. Leave it off unless you need it: with it on,
-  anyone who learns your password can change your rules or start trading. Live mode itself is switched on at the PC.
+  Set `BOT_REMOTE_CONTROL=1` to let the **team** login set rules and scanning from the website. Leave it off unless you need it:
+  with it on, anyone who learns the team password can change your rules or start trading. A viewer login can never send commands.
 - Without a password the bot only answers on the PC and refuses anything that arrives through a tunnel or proxy.
 
 **Running the bot while the PC is off:** run it on an always-on machine such as a small cloud server instead. The steps are the
@@ -228,8 +255,10 @@ Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `
 | `SERVER_HOST`, `SERVER_PORT` | donutsmp.net, 19132 | server address |
 | `BOT_API_PORT` | 8080 | website/API port |
 | `BOT_HOST` | 127.0.0.1 | address the website listens on (needs `BOT_PASSWORD` if it is not this computer) |
-| `BOT_PASSWORD` | none | turns on the login (8+ characters); needed for remote use |
-| `BOT_REMOTE_CONTROL=1` | off | let logged-in website users send commands (default is view only) |
+| `BOT_PASSWORD` | none | the team password (8+ characters); turns on the login, needed for remote use |
+| `BOT_VIEW_PASSWORD` | none | optional second password: can see the bot data but never send commands |
+| `BOT_PUBLIC=1` | off | anyone without a login can see item prices and details (needs `BOT_PASSWORD`) |
+| `BOT_REMOTE_CONTROL=1` | off | let the team login send commands from the website (default is view only) |
 | `BOT_COOKIE_SECURE=1` | off | mark the login cookie `Secure` (set it if you serve the site over https yourself) |
 
 ## 11. Troubleshooting

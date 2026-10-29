@@ -17,7 +17,7 @@ writes an XLSX trade log.
 - [x] Bot performs automatic actions (finds a listing, buys it, relists it)
 - [x] Bot creates an XLSX file (trade log with profit vs cost, rebuilt after every trade)
 - [x] Local price website (prices, history charts, rules)
-- [x] Safe remote access (password login, view-only by default, works over Tailscale or a Cloudflare Tunnel)
+- [x] Safe remote access (team password login, optional public price pages, view-only by default, works over Tailscale or a Cloudflare Tunnel)
 
 ## Quick start
 

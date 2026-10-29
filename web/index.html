@@ -21,6 +21,7 @@
   --accent:#f06595; --accent-ink:#1a0710; --up:#51cf66; --down:#ff6b6b; --focus:#74c0fc; --shadow:none;
 }
 *{box-sizing:border-box}
+[hidden]{display:none !important}
 html{color-scheme:light dark}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
 .wrap{max-width:1280px;margin:0 auto;padding:16px}
@@ -37,6 +38,7 @@ button{cursor:pointer}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 .btn.primary:hover{filter:brightness(1.05)}
 a.btn{display:inline-block;color:inherit;text-decoration:none}
+body.public .botonly{display:none !important}
 button:disabled,input:disabled{opacity:.5;cursor:not-allowed}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
@@ -88,8 +90,9 @@ td small{color:var(--muted)}
     <h1>DonutSMP Prices</h1>
     <span class="pill" id="botPill"><span class="dot"></span><span id="botText">connecting</span></span>
     <span class="spacer"></span>
-    <button class="btn" id="scanBtn" type="button">Pause scanning</button>
+    <button class="btn botonly" id="scanBtn" type="button">Pause scanning</button>
     <span class="pill" id="roPill" hidden title="Remote control is off on the PC">view only</span>
+    <a class="btn" id="signin" href="/login" hidden>Team sign in</a>
     <a class="btn" id="logout" href="/logout" hidden>Log out</a>
     <button class="btn" id="themeBtn" type="button" aria-label="Toggle dark mode">Theme</button>
   </header>
@@ -98,9 +101,9 @@ td small{color:var(--muted)}
 
   <section class="cards" aria-label="Summary">
     <div class="card"><div class="k">Items tracked</div><div class="v" id="cTracked">–</div><div class="s" id="cScan">–</div></div>
-    <div class="card"><div class="k">Realized profit (bot)</div><div class="v" id="cProfit">–</div><div class="s" id="cProfitSub">–</div></div>
-    <div class="card"><div class="k">Money in listings</div><div class="v" id="cListed">–</div><div class="s" id="cListedSub">–</div></div>
-    <div class="card"><div class="k">Bot</div><div class="v" id="cBot">–</div><div class="s" id="cBotSub">–</div></div>
+    <div class="card botonly"><div class="k">Realized profit (bot)</div><div class="v" id="cProfit">–</div><div class="s" id="cProfitSub">–</div></div>
+    <div class="card botonly"><div class="k">Money in listings</div><div class="v" id="cListed">–</div><div class="s" id="cListedSub">–</div></div>
+    <div class="card botonly"><div class="k">Bot</div><div class="v" id="cBot">–</div><div class="s" id="cBotSub">–</div></div>
   </section>
 
   <div class="toolbar">
@@ -114,8 +117,8 @@ td small{color:var(--muted)}
       <option value="n">Most listings</option>
       <option value="new">Recently updated</option>
     </select>
-    <input type="text" id="track" placeholder="Track another item" aria-label="Track another item" size="18">
-    <button class="btn" id="trackBtn" type="button">Add</button>
+    <input type="text" id="track" class="botonly" placeholder="Track another item" aria-label="Track another item" size="18">
+    <button class="btn botonly" id="trackBtn" type="button">Add</button>
   </div>
 
   <div class="layout">
@@ -147,7 +150,7 @@ td small{color:var(--muted)}
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
-const S = { items: [], status: {}, bot: {}, trades: null, rules: [], sel: null, sort: 'name', q: '', hist: null, msg: null, session: { auth: false, readOnly: false } };
+const S = { items: [], status: {}, bot: {}, trades: null, rules: [], sel: null, sort: 'name', q: '', hist: null, msg: null, session: { auth: false, readOnly: false, role: 'team' } };
 const NS = 'http://www.w3.org/2000/svg';
 
 const fmt = (n) => {
@@ -182,7 +185,8 @@ async function cmd(command) {
 async function refresh() {
   try {
     S.session = await get('/session').catch(() => S.session);
-    const [m, st, tr, rl] = await Promise.all([get('/market'), get('/status'), get('/trades').catch(() => null), get('/rules').catch(() => [])]);
+    const pub = S.session.role === 'public';          // not signed in: prices only, the bot's data is off limits
+    const [m, st, tr, rl] = pub ? [await get('/market'), {}, null, []] : await Promise.all([get('/market'), get('/status'), get('/trades').catch(() => null), get('/rules').catch(() => [])]);
     S.items = m.items; S.status = m.status; S.bot = st; S.trades = tr; S.rules = rl;
     $('banner').hidden = true;
     if (S.sel) S.hist = await get('/market/' + encodeURIComponent(S.sel)).catch(() => null);
@@ -218,7 +222,10 @@ function spark(vals, up) {
   svg.append(pl); return svg;
 }
 function render() {
-  $('logout').hidden = !S.session.auth; $('roPill').hidden = !S.session.readOnly;
+  const pub = S.session.role === 'public';
+  document.body.classList.toggle('public', pub);
+  $('botPill').style.display = pub ? 'none' : '';
+  $('signin').hidden = !pub; $('logout').hidden = !S.session.auth || pub; $('roPill').hidden = pub || !S.session.readOnly;
   for (const id of ['scanBtn', 'trackBtn', 'track']) $(id).disabled = S.session.readOnly;
   const b = S.bot, st = S.status, tr = S.trades && S.trades.summary;
   $('botPill').className = 'pill ' + (b.connected ? 'ok' : 'bad');
@@ -296,6 +303,7 @@ function renderDetail() {
   d.append(chart((S.hist && S.hist.history) || []));
   const stat = (k, v, cls = '') => el('div', {}, el('span', { text: k }), el('b', { class: cls, text: v }));
   d.append(el('div', { class: 'stats' }, stat('Average of 5 cheapest', fmt(it.avg5)), stat('Listings seen', String(it.n)), stat('Change (24h)', pct(it.change24h), it.change24h == null ? '' : it.change24h >= 0 ? 'pos' : 'neg'), stat('Source', S.hist ? (S.hist.source === 'api' ? 'official API' : 'in-game scan') : '–')));
+  if (S.session.role !== 'public') {
   const rule = S.rules.find((r) => r.item === it.item);
   d.append(el('h3', { text: 'Bot rule', style: 'margin:14px 0 0;font-size:15px' }));
   d.append(el('p', { class: 'note', text: rule ? `Buying ${it.name} at ${full(rule.maxPrice)} or less, selling at ${rule.sellUnit ? full(rule.sellUnit) + ' each' : rule.sellMultiple + 'x'}.` : 'No rule yet. The bot only buys when you set one.' }));
@@ -319,6 +327,7 @@ function renderDetail() {
   del.addEventListener('click', async () => { try { await cmd('drop ' + it.item); say('Rule removed.'); refresh(); } catch (err) { say('Failed: ' + err.message); } });
   if (S.session.readOnly) { f.querySelectorAll('input,button').forEach((x) => { x.disabled = true; }); msg.textContent = 'View only: remote control is switched off on the PC.'; }
   d.append(f);
+  }
 }
 function select(item) { S.sel = item; S.hist = null; renderDetail(); refresh(); if (matchMedia('(max-width:980px)').matches) $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' }); document.querySelectorAll('#rows tr').forEach((r) => r.classList.toggle('sel', r.dataset.item === item)); }
 
