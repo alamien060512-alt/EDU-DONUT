@@ -9,6 +9,7 @@ The bot's source. For installing, commands and troubleshooting read the top-leve
 | `strategy.js` | buy rules, price parsing (`12k`, `1.5m`), sell price calculation |
 | `ledger.js` | trade log: `data/trades.json`, `data/trades.csv`, `data/profit-vs-cost.xlsx` |
 | `market.js` | price board, price history and the watchlist |
+| `orders.js` | reads the order house (`/orders`, sorted Most Per Item, read-only) and keeps the best buy order per item |
 | `access.js` | who may reach the website/API: local-only mode, team/viewer logins, optional public prices, view-only, lockout, rate limit |
 | `msa-patch.js` | tolerant Microsoft device-code sign-in (polls until the code is entered) |
 | `raknet-patch.js` | fixes for the pure-JavaScript RakNet fallback (protocol 11, MTU, security cookie, ordering) |
@@ -18,7 +19,7 @@ The bot's source. For installing, commands and troubleshooting read the top-leve
 
 ## API (http://127.0.0.1:8080, this computer only)
 
-`GET /` price website (with a built-in terminal) · `/market` · `/market/<item>` · `/trades` · `/status` · `/rules` · `/log` (`/log?since=N` for new lines only) · `/holdings` · `/prices`
+`GET /` price website (with a built-in terminal) · `/market` · `/orders` · `/icons/<item>.webp` · `/market/<item>` · `/trades` · `/status` · `/rules` · `/log` (`/log?since=N` for new lines only) · `/holdings` · `/prices`
 `POST /command {"command":"..."}` needs the header `X-Bot: 1` (blocks other websites from sending commands).
 Without a password only `/market` and `/prices` allow other origins to read them. With `BOT_PASSWORD` set every route needs a login, except
 `/`, `/session`, `/market` and `/market/<item>` when `BOT_PUBLIC=1`. Commands need the team login plus `BOT_REMOTE_CONTROL=1`

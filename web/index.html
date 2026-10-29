@@ -39,6 +39,12 @@ button{cursor:pointer}
 .btn.primary:hover{filter:brightness(1.05)}
 a.btn{display:inline-block;color:inherit;text-decoration:none}
 body.public .botonly{display:none !important}
+.nm{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.ico{width:24px;height:24px;object-fit:contain;flex:none}
+.ico.big{width:44px;height:44px}
+.rank{color:var(--muted);font-variant-numeric:tabular-nums;width:2.2em;display:inline-block}
+tr.top1 .rank,tr.top2 .rank,tr.top3 .rank{color:var(--accent);font-weight:700}
+.hint{color:var(--muted);font-size:13px;margin:0 0 10px}
 .tabs{display:flex;gap:6px;margin:0 0 12px;border-bottom:1px solid var(--line)}
 .tab{all:unset;cursor:pointer;padding:9px 14px;border-bottom:3px solid transparent;color:var(--muted);font-weight:600}
 .tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
@@ -134,6 +140,7 @@ td small{color:var(--muted)}
 
   <div class="tabs" role="tablist" aria-label="Views">
     <button class="tab" role="tab" id="tabMarket" aria-selected="true" aria-controls="viewMarket" type="button">Market</button>
+    <button class="tab" role="tab" id="tabOrders" aria-selected="false" aria-controls="viewOrders" type="button">Top orders</button>
     <button class="tab" role="tab" id="tabPortfolio" aria-selected="false" aria-controls="viewPortfolio" type="button">My portfolio <span id="pfCount"></span></button>
   </div>
 
@@ -176,6 +183,32 @@ td small{color:var(--muted)}
       <div class="empty">Select an item to see its price history and set a buy rule.</div>
     </aside>
   </div>
+  </div>
+
+  <div id="viewOrders" role="tabpanel" aria-labelledby="tabOrders" hidden>
+    <p class="hint">The highest price buyers are offering per item right now: the order house sorted by most per item.
+      Sell to an order to get that price for every item you deliver.</p>
+    <div class="toolbar">
+      <input type="search" id="oq" placeholder="Search items (e.g. elytra)" aria-label="Search top orders">
+      <select id="osort" aria-label="Sort top orders">
+        <option value="top">Top order: high to low</option>
+        <option value="low">Top order: low to high</option>
+        <option value="demand">Most items wanted</option>
+        <option value="n">Most orders</option>
+        <option value="up">Biggest rise (24h)</option>
+        <option value="name">Name</option>
+      </select>
+      <span class="pill" id="oStatus">not scanned yet</span>
+    </div>
+    <section class="panel" aria-label="Top orders">
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>#&nbsp; Item</th><th>Top order (each)</th><th class="hide-sm">Orders seen</th><th class="hide-sm">Items still wanted</th><th>24h</th><th class="hide-sm">Trend</th><th class="hide-sm">Updated</th></tr></thead>
+          <tbody id="oRows"></tbody>
+        </table>
+        <div id="oEmpty" class="empty" hidden></div>
+      </div>
+    </section>
   </div>
 
   <div id="viewPortfolio" role="tabpanel" aria-labelledby="tabPortfolio" hidden>
@@ -229,15 +262,15 @@ td small{color:var(--muted)}
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
-const S = { items: [], status: {}, bot: {}, trades: null, rules: [], sel: null, sort: 'name', q: '', hist: null, msg: null, session: { auth: false, readOnly: false, role: 'team' } };
+const S = { items: [], status: {}, bot: {}, trades: null, rules: [], sel: null, sort: 'name', q: '', hist: null, msg: null, session: { auth: false, readOnly: false, role: 'team' }, orders: { status: {}, items: [] }, icons: false, noIcon: new Set(), osort: 'top', oq: '' };
 const NS = 'http://www.w3.org/2000/svg';
 
 const fmt = (n) => {
   if (n == null || isNaN(n)) return '–';
   const a = Math.abs(n);
-  const f = (v, u) => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)).replace(/\.?0+$/, '') + u;
-  if (a >= 1e9) return '$' + f(n / 1e9, 'B');
-  if (a >= 1e6) return '$' + f(n / 1e6, 'M');
+  const f = (v, u) => { let t = v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2); if (t.includes('.')) t = t.replace(/\.?0+$/, ''); return t + u; };   // only trim zeros after a decimal point: 700 must stay 700
+  if (a >= 999.5e6) return '$' + f(n / 1e9, 'B');       // 999,999,999 reads as 1B, not 1000M
+  if (a >= 999500) return '$' + f(n / 1e6, 'M');
   if (a >= 1e3) return '$' + f(n / 1e3, 'K');
   return '$' + (Number.isInteger(n) ? n : n.toFixed(2));
 };
@@ -254,6 +287,19 @@ const el = (tag, props = {}, ...kids) => {
   kids.forEach((c) => e.append(c));
   return e;
 };
+// A small item picture (made with RenderChest, see HOW-TO-USE.md). Without the pictures installed nothing is shown.
+function icon(key, big = false) {
+  if (!S.icons || S.noIcon.has(key)) return null;
+  const i = el('img', { class: 'ico' + (big ? ' big' : ''), src: '/icons/' + encodeURIComponent(key) + '.webp', alt: '', loading: 'lazy' });
+  i.addEventListener('error', () => { S.noIcon.add(key); i.remove(); });
+  return i;
+}
+// icon + name, kept together
+function nameWithIcon(key, text, big = false) {
+  const w = el('span', { class: 'nm' }), i = icon(key, big); if (i) w.append(i);
+  w.append(el('span', { text })); return w;
+}
+fetch('/icons/diamond.webp', { method: 'HEAD' }).then((r) => { S.icons = r.ok; if (S.icons) render(); }).catch(() => {});
 async function get(path) { const r = await fetch(path, { cache: 'no-store' }); if (!r.ok) throw new Error(path + ' ' + r.status); return r.json(); }
 async function cmd(command) {
   const r = await fetch('/command', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bot': '1' }, body: JSON.stringify({ command }) });
@@ -263,8 +309,9 @@ async function cmd(command) {
 // ---------- data ----------
 async function refresh() {
   try {
-    S.session = await get('/session').catch(() => S.session);
+    S.session = await get('/session').catch(() => S.session); S.sessionKnown = true;
     const pub = S.session.role === 'public';          // not signed in: prices only, the bot's data is off limits
+    S.orders = await get('/orders').catch(() => S.orders);
     const [m, st, tr, rl] = pub ? [await get('/market'), {}, null, []] : await Promise.all([get('/market'), get('/status'), get('/trades').catch(() => null), get('/rules').catch(() => [])]);
     S.items = m.items; S.status = m.status; S.bot = st; S.trades = tr; S.rules = rl;
     $('banner').hidden = true;
@@ -308,6 +355,7 @@ function render() {
   for (const id of ['scanBtn', 'trackBtn', 'track']) $(id).disabled = S.session.readOnly;
   termState();
   renderPortfolio();
+  renderOrders();
   const b = S.bot, st = S.status, tr = S.trades && S.trades.summary;
   $('botPill').className = 'pill ' + (b.connected ? 'ok' : 'bad');
   $('botText').textContent = b.connected ? (b.live ? 'bot online · LIVE trading' : 'bot online · dry run') : 'bot not in game';
@@ -324,7 +372,7 @@ function render() {
   const rows = sorted(), tb = $('rows'); tb.textContent = '';
   for (const i of rows) {
     const tr2 = el('tr', { tabindex: 0, 'data-item': i.item, class: i.item === S.sel ? 'sel' : '', 'aria-label': i.name });
-    tr2.append(el('td', { class: 'name', text: i.name }));
+    const nm = el('td', { class: 'name' }); nm.append(nameWithIcon(i.item, i.name)); tr2.append(nm);
     tr2.append(el('td', { text: fmt(i.low), title: full(i.low) }));
     tr2.append(el('td', { class: 'hide-sm', text: fmt(i.avg5), title: full(i.avg5) }));
     tr2.append(el('td', { class: 'hide-sm', text: i.n }));
@@ -379,11 +427,13 @@ function renderDetail() {
   const it = S.items.find((i) => i.item === S.sel); if (!it) return;
   const keep = { buy: d.querySelector('#fBuy') && d.querySelector('#fBuy').value, sell: d.querySelector('#fSell') && d.querySelector('#fSell').value };
   d.textContent = '';
-  d.append(el('h2', { text: it.name }), el('div', { class: 'big', text: fmt(it.low), title: full(it.low) }));
+  const h2 = el('h2'); h2.append(nameWithIcon(it.item, it.name, true));
+  d.append(h2, el('div', { class: 'big', text: fmt(it.low), title: full(it.low) }));
   d.append(el('div', { class: 'note', text: 'lowest price now · updated ' + ago(it.updated) }));
   d.append(chart((S.hist && S.hist.history) || []));
   const stat = (k, v, cls = '') => el('div', {}, el('span', { text: k }), el('b', { class: cls, text: v }));
-  d.append(el('div', { class: 'stats' }, stat('Average of 5 cheapest', fmt(it.avg5)), stat('Listings seen', String(it.n)), stat('Change (24h)', pct(it.change24h), it.change24h == null ? '' : it.change24h >= 0 ? 'pos' : 'neg'), stat('Source', S.hist ? (S.hist.source === 'api' ? 'official API' : 'in-game scan') : '–')));
+  const to = S.orders.items.find((o) => o.item === it.item);
+  d.append(el('div', { class: 'stats' }, stat('Average of 5 cheapest', fmt(it.avg5)), stat('Listings seen', String(it.n)), stat('Top buy order', to ? fmt(to.top) + ' each' : '–'), stat('Items buyers want', to ? String(to.demand) : '–'), stat('Change (24h)', pct(it.change24h), it.change24h == null ? '' : it.change24h >= 0 ? 'pos' : 'neg'), stat('Source', S.hist ? (S.hist.source === 'api' ? 'official API' : 'in-game scan') : '–')));
   if (S.session.role !== 'public') {
   const rule = S.rules.find((r) => r.item === it.item);
   d.append(el('h3', { text: 'Bot rule', style: 'margin:14px 0 0;font-size:15px' }));
@@ -447,12 +497,37 @@ function toast(text) {
   const t = el('div', { class: 'toast', role: 'status', text }); document.body.append(t); setTimeout(() => t.remove(), 9000);
   try { if (window.Notification && Notification.permission === 'granted') new Notification('DonutSMP price alert', { body: text }); } catch {}
 }
+const VIEWS = { market: ['viewMarket', 'tabMarket'], orders: ['viewOrders', 'tabOrders'], portfolio: ['viewPortfolio', 'tabPortfolio'] };
 function showTab(name) {
-  const m = name !== 'portfolio';
-  $('viewMarket').hidden = !m; $('viewPortfolio').hidden = m;
-  $('tabMarket').setAttribute('aria-selected', String(m)); $('tabPortfolio').setAttribute('aria-selected', String(!m));
+  if (!VIEWS[name]) name = 'market';
+  for (const [k, [v, t]] of Object.entries(VIEWS)) { $(v).hidden = k !== name; $(t).setAttribute('aria-selected', String(k === name)); }
   try { localStorage.setItem('donut.tab', name); } catch {}
-  if (!m) renderPortfolio();
+  if (name === 'portfolio') renderPortfolio();
+  if (name === 'orders') renderOrders();
+}
+function renderOrders() {
+  const st = S.orders.status || {}, q = S.oq.trim().toLowerCase();
+  let list = (S.orders.items || []).filter((o) => !q || o.name.toLowerCase().includes(q) || o.item.includes(q.replace(/\s+/g, '_')));
+  const by = { top: (a, b) => b.top - a.top, low: (a, b) => a.top - b.top, demand: (a, b) => b.demand - a.demand, n: (a, b) => b.n - a.n, up: (a, b) => (b.change24h ?? -9) - (a.change24h ?? -9), name: (a, b) => a.name.localeCompare(b.name) }[S.osort];
+  list = list.slice().sort(by);
+  $('oStatus').textContent = st.lastUpdate ? 'updated ' + ago(st.lastUpdate) : (st.note || 'not scanned yet');
+  $('oStatus').title = st.note || '';
+  const tb = $('oRows'); tb.textContent = '';
+  list.forEach((o, idx) => {
+    const tr = el('tr', { class: idx < 3 && S.osort === 'top' && !q ? 'top' + (idx + 1) : '', tabindex: 0, 'aria-label': o.name });
+    const nm = el('td', { class: 'name' }); nm.append(el('span', { class: 'rank', text: S.osort === 'top' ? String(idx + 1) : '' }), nameWithIcon(o.item, o.name)); tr.append(nm);
+    tr.append(el('td', { text: fmt(o.top), title: full(o.top) + ' each' }));
+    tr.append(el('td', { class: 'hide-sm', text: String(o.n) }));
+    tr.append(el('td', { class: 'hide-sm', text: o.demand ? o.demand.toLocaleString('en-US') : '–' }));
+    tr.append(el('td', { class: o.change24h == null ? '' : o.change24h >= 0 ? 'pos' : 'neg', text: pct(o.change24h) }));
+    const sp = el('td', { class: 'hide-sm' }); sp.append(spark(o.spark, o.change24h)); tr.append(sp);
+    tr.append(el('td', { class: 'hide-sm', text: ago(o.updated) }));
+    const open = () => { if (S.items.some((i) => i.item === o.item)) { showTab('market'); select(o.item); } };
+    tr.addEventListener('click', open); tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+    tb.append(tr);
+  });
+  const em = $('oEmpty'); em.hidden = list.length > 0;
+  em.textContent = (S.orders.items || []).length ? 'No items match your search.' : 'No order data yet. ' + (st.note && st.note !== 'not scanned yet' ? st.note + '. ' : '') + 'The bot reads the order house every few minutes once it is in game.';
 }
 function renderPortfolio() {
   $('pfCount').textContent = P.items.length ? '(' + P.items.length + ')' : '';
@@ -470,7 +545,7 @@ function renderPortfolio() {
       if (hit && !P.alerted[k]) { P.alerted[k] = true; changed = true; toast(msg); } else if (!hit && P.alerted[k]) { delete P.alerted[k]; changed = true; }
     }
     const tr = el('tr', { class: 'pfrow' });
-    const nameTd = el('td'); const link = el('button', { class: 'itemlink', type: 'button', text: it ? it.name : x.item.replace(/_/g, ' '), title: 'Open in Market' });
+    const nameTd = el('td'); const link = el('button', { class: 'itemlink', type: 'button', title: 'Open in Market' }); link.append(nameWithIcon(x.item, it ? it.name : x.item.replace(/_/g, ' ')));
     link.addEventListener('click', () => { showTab('market'); if (it) select(x.item); }); nameTd.append(link); tr.append(nameTd);
     tr.append(el('td', { text: x.qty > 0 ? String(x.qty) : 'watching' }));
     tr.append(el('td', { text: x.cost != null ? fmt(x.cost) : '–', title: x.cost != null ? full(x.cost) : '' }));
@@ -534,9 +609,12 @@ $('pfNotify').addEventListener('click', async () => {
   const r = await Notification.requestPermission(); pfMsg(r === 'granted' ? 'Notifications on. They show while this page is open.' : 'Notifications are off for this site.');
 });
 $('tabMarket').addEventListener('click', () => showTab('market'));
+$('tabOrders').addEventListener('click', () => showTab('orders'));
+$('oq').addEventListener('input', (e) => { S.oq = e.target.value; renderOrders(); });
+$('osort').addEventListener('change', (e) => { S.osort = e.target.value; renderOrders(); });
 $('tabPortfolio').addEventListener('click', () => showTab('portfolio'));
 pfLoad();
-try { if (localStorage.getItem('donut.tab') === 'portfolio') showTab('portfolio'); } catch {}
+try { const t = localStorage.getItem('donut.tab'); if (t && t !== 'market') showTab(t); } catch {}
 
 // ---------- terminal ----------
 const COMMANDS = ['help', 'status', 'rules', 'buy', 'drop', 'limit', 'listed', 'pause', 'resume', 'live on', 'live off', 'scan', 'trades', 'fee', 'market on', 'market off', 'watch', 'watch add', 'watch remove', 'inv', 'peek', 'cmd', 'buynow', 'sellnow', 'inspectbuy', 'clear'];
@@ -551,7 +629,7 @@ function tline(text, cls = '') {
   if (stick) out.scrollTop = out.scrollHeight;
 }
 async function pollLog() {
-  if (S.session.role === 'public') return;
+  if (!S.sessionKnown || S.session.role === 'public') return;       // wait until we know who is looking
   try {
     const r = await get('/log?since=' + T.seq);
     const lines = T.first ? r.lines.slice(-40) : r.lines;       // on first load show only the latest lines

@@ -126,6 +126,8 @@ Nothing was charged; this is normal for popular items.
 | `trades` | totals and where the spreadsheet is |
 | `fee <percent>` | set a sale fee for the spreadsheet (default 0) |
 | `market on\|off` | start / stop the price scanner |
+| `orders` / `orders scan` / `orders on\|off` | status / read the order house now / start or stop the order reader |
+| `peekorders` | print every tile of the `/orders` screen and how the bot read it (read-only) |
 | `watch`, `watch add <item>`, `watch remove <item>` | the list of items the price scanner tracks |
 | `quit` | exit |
 
@@ -158,6 +160,36 @@ The bot searches each watched item in `/ah` (about 70 by default, one every 7 se
 `DONUTSMP_API_KEY` set (get one in game with `/api`) it reads many pages of the official listings instead,
 which covers more items. The site only works while the bot runs. By default only your own computer can open it; to use it from your phone away
 from home see section 9.
+
+**Top orders.** The **Top orders** tab shows, for each item, the highest price a buyer is offering right now
+(DonutSMP's order house, "buy orders"). For example `Elytra $700M`, `Gilded Blackstone $4M`. Everyone sees it, signed in or not.
+
+- Columns: top order price each, how many orders were seen, how many items buyers still want, the 24h change and a trend line.
+  Click a row to open that item's market details, which also show its top buy order.
+- How it is collected: every 5 minutes the bot opens `/orders`, switches the sort to **Most Per Item** and reads the first
+  few pages. It is **read-only**: it only clicks the sort button and the next-page arrow, never an order.
+- Commands: `orders scan` (read now), `orders on` / `orders off`, `orders` (status), and `peekorders` (prints every tile on
+  the order screen and what the bot understood from it).
+- **First time:** the order screen's layout was copied from how the Java client reads it, and I could not test it on the
+  live Bedrock server. Start the bot, run `peekorders`, and check that orders show a `"order": { "unit": ... }` price. If
+  they do not, send me the output and I will adjust. The tab says "No order data yet" until the first read works.
+- Settings: `ORDERS=0` turns it off, `ORDERS_MS` (default 300000) is the time between reads, `ORDERS_PAGES` (default 5) the pages per read.
+
+**Item pictures.** The website can show a small picture next to every item name (Market, Top orders, portfolio, details). The
+pictures are made with [RenderChest](https://github.com/aternosorg/renderchest) from Minecraft's own assets, so they are
+Mojang's artwork: use them yourself, do not upload or share them (the `data` folder is git-ignored). There are two ways:
+
+1. **Unzip a ready-made pack** into the bot folder so that the pictures end up in `data\icons` (the file is
+   `minecraft-icons-26.3.zip`; right-click, Extract All, into the `EDU-DONUT` folder). Restart nothing: just refresh the page.
+2. **Make them yourself** (any Minecraft version, or with a resource pack) with `tools/make-icons.sh`. It needs PHP 8.1+ with the
+   imagick extension, composer, git, curl, unzip and node, so on Windows run it inside WSL. It downloads the Minecraft client
+   from Mojang, renders every item (about a minute) and fills `data/icons`:
+```
+tools/make-icons.sh
+MC_VERSION=1.21.4 tools/make-icons.sh
+```
+
+Without pictures the page works the same, just without them.
 
 **My portfolio.** The **My portfolio** tab (next to **Market**) lets each person follow the items they care about:
 
@@ -231,7 +263,7 @@ You can let anyone open the price pages without signing in, while keeping the bo
 
 | Who | How they get in | What they see |
 |---|---|---|
-| Anyone with the link | no login (needs `BOT_PUBLIC=1`) | item prices, price history and item details only |
+| Anyone with the link | no login (needs `BOT_PUBLIC=1`) | item prices, price history, item details, top orders and item pictures only |
 | Your teammate | **Team sign in** with `BOT_PASSWORD` | everything: profit, trades, rules, log, bot status, and bot commands (if `BOT_REMOTE_CONTROL=1`) |
 | Optional read-only teammate | **Team sign in** with `BOT_VIEW_PASSWORD` | the same bot data, but no commands |
 
@@ -280,6 +312,9 @@ Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `
 | `PAGES` | 10 | API pages per price pass |
 | `SERVER_HOST`, `SERVER_PORT` | donutsmp.net, 19132 | server address |
 | `BOT_API_PORT` | 8080 | website/API port |
+| `ORDERS=0` | on | turn the order-house reader off |
+| `ORDERS_MS` | 300000 | time between order-house reads (ms) |
+| `ORDERS_PAGES` | 5 | pages read per order-house read |
 | `BOT_HOST` | 127.0.0.1 | address the website listens on (needs `BOT_PASSWORD` if it is not this computer) |
 | `BOT_PASSWORD` | none | the team password (8+ characters); turns on the login, needed for remote use |
 | `BOT_VIEW_PASSWORD` | none | optional second password: can see the bot data but never send commands |
@@ -318,6 +353,8 @@ delete `data/auth`.
 | `bot/strategy.js` | buy rules and price parsing |
 | `bot/ledger.js` | trade log and spreadsheet |
 | `bot/market.js` | price board and watchlist |
+| `bot/orders.js` | reads the order house (`/orders`) and keeps the top buy order per item |
+| `tools/make-icons.sh` | makes the item pictures with RenderChest into `data/icons` |
 | `bot/access.js` | website login, view-only mode and the rules for who may reach the bot |
 | `web/index.html` | the price website |
 | `bot/*-patch.js` | fixes for login and network libraries |

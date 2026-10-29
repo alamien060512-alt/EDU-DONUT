@@ -2,7 +2,7 @@
 //
 // Default: only this computer can (127.0.0.1), no password needed.
 // Away from home: set BOT_PASSWORD (the team password). Then every page needs a login, with three kinds of visitor:
-//   public  not signed in. Only item prices and item details, and only if BOT_PUBLIC=1.
+//   public  not signed in. Only item prices, item details, top buy orders and item pictures, and only if BOT_PUBLIC=1.
 //   viewer  signed in with BOT_VIEW_PASSWORD (optional). Can see the bot's data, can't send commands.
 //   team    signed in with BOT_PASSWORD. Can see the bot's data and, if BOT_REMOTE_CONTROL=1, send commands.
 // The bot can spend money, so it refuses to listen on a network address without a password.
@@ -60,7 +60,7 @@ class Access {
   }
   // Pages and data a not-signed-in visitor may see when BOT_PUBLIC=1: item prices only.
   isPublicPath(p) {
-    return p === '/' || p === '/index.html' || p === '/session' || p === '/market' || p.startsWith('/market/');
+    return p === '/' || p === '/index.html' || p === '/session' || p === '/market' || p.startsWith('/market/') || p === '/orders' || p.startsWith('/icons/');
   }
   // Commands (which can spend money) need the team login AND the remote-control switch.
   canControl(req) {

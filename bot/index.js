@@ -8,6 +8,7 @@ const { Rules, parseBuy, parsePrice, clean } = require('./strategy');
 const { Ledger } = require('./ledger');
 const { Market, Watchlist, pretty } = require('./market');
 const { Access } = require('./access');
+const { OrderBoard, scanOrders, applyScan, parseTile } = require('./orders');
 const fs = require('fs');
 const path = require('path');
 
@@ -29,6 +30,9 @@ const log = (m) => { const l = `${new Date().toISOString().slice(11, 19)} ${m}`;
 const ledger = new Ledger(log);
 const market = new Market(log);
 const access = new Access(process.env, log);
+const orderBoard = new OrderBoard(log);
+const ORDERS_MS = +process.env.ORDERS_MS || 300000;      // how often the order house is read (ms)
+const ICON_DIR = path.join(process.cwd(), 'data', 'icons');
 const watch = new Watchlist();
 const MARKET_MS = +process.env.MARKET_MS || 7000;     // pause between in-game price searches (ms)
 // Only one auction-house job at a time. Trading, manual commands and the price scanner all share the same window.
@@ -244,7 +248,7 @@ async function buy(h) {
 }
 
 // ---- commands (console + API) ----
-const LOCKED = new Set(['scan', 'buynow', 'sellnow', 'peek', 'inspectbuy']);
+const LOCKED = new Set(['scan', 'buynow', 'sellnow', 'peek', 'inspectbuy', 'orders', 'peekorders']);
 async function run(line) {
   const c = (line.trim().split(/\s+/)[0] || '').toLowerCase();
   return LOCKED.has(c) ? withAh(() => runInner(line)) : runInner(line);
@@ -256,6 +260,18 @@ async function runInner(line) {
       if (a[0] === 'add') return { added: a.slice(1).map((x) => [x, watch.add(x)]), watchlist: watch.items.length };
       if (a[0] === 'remove') return { removed: watch.remove(a[1] || ''), watchlist: watch.items.length };
       return watch.items;
+    }
+    case 'orders': { // orders on | off | status | scan
+      if (a[0] === 'on') orderBoard.on = true; else if (a[0] === 'off') { orderBoard.on = false; orderBoard.save(); }
+      else if (a[0] === 'scan') { if (!state.connected) return 'not connected yet'; await ordersOnce(); }
+      return orderBoard.status();
+    }
+    case 'peekorders': { // peekorders: open /orders and print every tile with what we parsed from it (read-only)
+      if (!state.connected) return 'not connected yet';
+      const win = await ah.open('/orders', 2);
+      const rows = [...win.slots].filter(([, it]) => it && it.network_id).map(([slot, it]) => ({ slot, name: ah.nameOf(it), count: it.count, lore: ah.textOf(it).join(' | ').slice(0, 220), order: parseTile(ah.textOf(it)) }));
+      ah.closeAll();
+      return rows.length ? rows : 'the order window had no items';
     }
     case 'market': { // market on | off | status
       if (a[0] === 'on') market.on = true; else if (a[0] === 'off') { market.on = false; market.save(); }
@@ -316,6 +332,23 @@ async function runInner(line) {
   }
 }
 
+// ---- order house (top buy orders) ----
+// Runs inside the auction-house lock. Reads a few pages sorted by most per item and updates the board.
+async function ordersOnce() {
+  try {
+    const scan = await withAh(() => scanOrders(ah, { pages: +process.env.ORDERS_PAGES || 5 }));
+    applyScan(orderBoard, scan);
+    log('orders: ' + orderBoard.note);
+  } catch (e) { orderBoard.note = 'scan failed: ' + String(e.message).slice(0, 100); log('orders: ' + orderBoard.note); try { ah.closeAll(); } catch {} }
+}
+async function ordersLoop() {
+  await sleep(20000);
+  for (;;) {
+    if (orderBoard.on && state.connected) await ordersOnce();
+    await sleep(ORDERS_MS);
+  }
+}
+
 // ---- price board scanners ----
 // In game: search each watched item in /ah (cheapest first) and record the plain listings it shows.
 async function marketGuiLoop() {
@@ -364,7 +397,7 @@ async function marketApiLoop() {
 }
 
 // ---- website + API ----
-const PUBLIC_READ = /^\/(market|prices)(\/|$)/;   // price data is read-only, so other websites may fetch it
+const PUBLIC_READ = /^\/(market|prices|orders)(\/|$)/;   // price data is read-only, so other websites may fetch it
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
   if (await access.gate(req, res, u)) return;      // host checks, or the login when a password is set
@@ -378,6 +411,13 @@ http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html')));
     }
+    if (u.pathname.startsWith('/icons/')) {            // item pictures made by RenderChest (see HOW-TO-USE.md)
+      const m = /^\/icons\/([a-z0-9_]+)\.webp$/.exec(u.pathname);
+      let file = null; try { file = m && fs.readFileSync(path.join(ICON_DIR, m[1] + '.webp')); } catch {}
+      if (!file) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'content-type': 'image/webp', 'cache-control': 'public, max-age=86400' }); return res.end(file);
+    }
+    if (u.pathname === '/orders') return send({ status: orderBoard.status(), items: orderBoard.list() });
     if (u.pathname === '/session') return send({ auth: access.passwordMode, role: req.role, publicMode: access.publicMode, readOnly: !access.canControl(req) });
     if (u.pathname === '/status') return send({ connected: state.connected, live: state.live, spent: state.spent, listed: state.listed, maxListings: state.maxListings, paused: state.paused });
     if (u.pathname === '/rules') return send(rules.list());
@@ -408,7 +448,7 @@ http.createServer(async (req, res) => {
       if (/^\s*quit\b/i.test(line)) return send({ error: 'quit only works at the PC console, not from the website' }, 403);   // nobody should be able to stop the bot remotely
       return send({ result: await run(line) });
     }
-    send({ error: 'not found', routes: ['/', '/session', '/market', '/market/<item>', '/trades', '/status', '/rules', '/log', '/holdings', '/prices', 'POST /command (header X-Bot: 1)'] }, 404);
+    send({ error: 'not found', routes: ['/', '/session', '/market', '/orders', '/icons/<item>.webp', '/market/<item>', '/trades', '/status', '/rules', '/log', '/holdings', '/prices', 'POST /command (header X-Bot: 1)'] }, 404);
   } catch (e) { send({ error: e.message }, 400); }
 }).listen(API_PORT, access.host, () => log(`Website + API on http://${access.host}:${API_PORT}` + (access.passwordMode ? ` (password protected${access.publicMode ? ', public prices ON' : ''}, ${access.remoteControl ? 'team can send commands' : 'view only'})` : '')));
 
@@ -418,6 +458,7 @@ if (require.main === module) {
   if (process.env.NO_CONNECT !== '1') connect().catch((e) => log('connect failed: ' + e.message));
   setInterval(() => withAh(scan), SCAN_MS);
   if (KEY) marketApiLoop(); else marketGuiLoop();
+  ordersLoop();
   setInterval(() => market.save(), 120000);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: 'bot> ' });
   rl.prompt();

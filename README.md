@@ -17,6 +17,8 @@ writes an XLSX trade log.
 - [x] Bot performs automatic actions (finds a listing, buys it, relists it)
 - [x] Bot creates an XLSX file (trade log with profit vs cost, rebuilt after every trade)
 - [x] Local price website (prices, history charts, rules) with a built-in terminal for bot commands and the live log
+- [x] Item pictures next to every name, rendered with [RenderChest](https://github.com/aternosorg/renderchest)
+- [x] Top orders tab: the highest buy-order price per item from the order house
 - [x] Personal portfolio on the website (items, how many you own, profit/loss, price alerts), saved separately in each browser
 - [x] Safe remote access (team password login, optional public price pages, view-only by default, works over Tailscale or a Cloudflare Tunnel)
 
@@ -60,6 +62,7 @@ without connecting to any server.
 ## Credits and licence
 
 - Idea inspired by [cody-raves/Gonuts](https://github.com/cody-raves/Gonuts) (MIT), a Java-edition mod. No code was copied.
+- Item pictures are rendered with [RenderChest](https://github.com/aternosorg/renderchest) (MIT) from Minecraft's assets; they are Mojang's artwork and stay on your computer.
 - Built on [bedrock-protocol](https://github.com/PrismarineJS/bedrock-protocol), [prismarine-auth](https://github.com/PrismarineJS/prismarine-auth) and [ExcelJS](https://github.com/exceljs/exceljs).
 - Not affiliated with Mojang, Microsoft or any server.
 - Released under the [MIT License](LICENSE).
