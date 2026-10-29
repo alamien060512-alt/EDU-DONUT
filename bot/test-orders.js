@@ -73,7 +73,25 @@ const topOf = (n) => Math.max(...ORDERS.filter((o) => o[0] === n).map((o) => o[1
   const a2 = new FakeAh(); const s2 = await scanOrders(a2, { ...fast, maxPages: 2 });
   assert.strictEqual(s2.pages, 2); assert.ok(/page limit/.test(s2.note));
   const a3 = new FakeAh(); const s3 = await scanOrders(a3, { ...fast, maxSeconds: -1 });
-  assert.strictEqual(s3.pages, 1); assert.ok(/stopped after/.test(s3.note));
+  assert.strictEqual(s3.pages, 1); assert.ok(/time limit/.test(s3.note) && s3.next === 1);
+
+  // pausing for another job and carrying on gives exactly the same result as one full read
+  const acc = new Map(); let r = await scanOrders(new FakeAh(), { ...fast, best: acc, yieldAfter: -1, shouldYield: () => true });
+  assert.strictEqual(r.next, 1); assert.strictEqual(r.pages, 1);                     // read one page, then gave way
+  let chunks = 1;
+  while (r.next > 0 && chunks < 60) { r = await scanOrders(new FakeAh(), { ...fast, best: acc, startPage: r.next, yieldAfter: -1, shouldYield: () => true }); chunks++; }
+  assert.strictEqual(r.next, 0);                                                    // finally reached the last page
+  assert.strictEqual(chunks, Math.ceil(ORDERS.length / PER_PAGE));                  // one page per piece, none skipped or repeated
+  assert.strictEqual(acc.size, names.length);
+  for (const n of names) assert.strictEqual(Math.max(...acc.get(n.toLowerCase().replace(/ /g, '_')).units), topOf(n), 'resumed ' + n);
+  assert.strictEqual(acc.get('elytra').units.length, 12);                           // no order counted twice
+  const board2 = new OrderBoard(); applyScan(board2, { items: acc, sorted: true, next: 3, pages: 1, page: 3, note: 'x' });
+  assert.strictEqual(board2.cursor, 3); assert.strictEqual(board2.scans, 0);       // a paused piece is not a finished read
+  applyScan(board2, { items: acc, sorted: true, next: 0, pages: 1, page: 9, note: 'x' });
+  assert.strictEqual(board2.cursor, 0); assert.strictEqual(board2.scans, 1); assert.ok(board2.lastFull);
+  // a manual read never gives way
+  const s6 = await scanOrders(new FakeAh(), { ...fast, yieldAfter: 1e9, shouldYield: () => true });
+  assert.strictEqual(s6.next, 0); assert.strictEqual(s6.pages, Math.ceil(ORDERS.length / PER_PAGE));
 
   // already sorted: no sort click needed
   const ah2 = new FakeAh(); ah2.sort = 'Most Per Item'; ah2.build();

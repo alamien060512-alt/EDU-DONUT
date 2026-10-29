@@ -127,7 +127,7 @@ Nothing was charged; this is normal for popular items.
 | `fee <percent>` | set a sale fee for the spreadsheet (default 0) |
 | `market scan [item]` | update prices right now: one item (waits for the answer) or the whole watchlist (background) |
 | `market on\|off` | start / stop the price scanner |
-| `orders` / `orders scan` / `orders on\|off` | status / read the order house now / start or stop the order reader |
+| `orders` / `orders scan` / `orders on\|off` | status / read the whole order house now (in the background) / start or stop the order reader |
 | `icons` | where the bot found the item pictures, and how many |
 | `peekorders` | print every tile of the `/orders` screen and how the bot read it (read-only) |
 | `watch`, `watch add <item>`, `watch remove <item>` | the list of items the price scanner tracks |
@@ -170,16 +170,19 @@ from home see section 9.
   Click a row to open that item's market details, which also show its top buy order.
 - Every item that has an order gets a row. When sorted by price the first pages are almost all the same few pricey items
   (elytra...), so the bot reads **every page** of the order house and keeps the highest price it sees per item.
-- How it is collected: shortly after the bot joins, then every 30 minutes, it opens `/orders`, switches the sort to
-  **Most Per Item** and goes through all the pages (a minute or two; the tab shows "reading page N" while it works).
-  It is **read-only**: it only clicks the sort button and the next-page arrow, never an order. Trading waits while it reads.
+- How it is collected: shortly after the bot joins, then again 5 minutes after each full read, it opens `/orders`, switches the
+  sort to **Most Per Item** and goes through all the pages (a minute or two; the tab shows "reading page N" while it works,
+  and fills in as it goes, then "next read in N min"). It is **read-only**: it only clicks the sort button and the next-page
+  arrow, never an order. It gives way to trading: whenever a buy or another job is waiting for the auction house, the read
+  pauses after about 20 seconds, lets that job run, and carries on from the same page.
+- **Update orders now** (team login) or `orders scan` reads the whole order house straight away, in the background.
 - Rows not seen in the latest full read for 2 hours are dimmed, because that order may be gone.
 - Commands: `orders scan` (read now), `orders on` / `orders off`, `orders` (status), and `peekorders` (prints every tile on
   the order screen and what the bot understood from it).
 - **First time:** the order screen's layout was copied from how the Java client reads it, and I could not test it on the
   live Bedrock server. Start the bot, run `peekorders`, and check that orders show a `"order": { "unit": ... }` price. If
   they do not, send me the output and I will adjust. The tab says "No order data yet" until the first read works.
-- Settings: `ORDERS=0` turns it off, `ORDERS_MS` (default 1800000 = 30 min) is the time between full reads, `ORDERS_PAGES` (default 250) the most pages per read,
+- Settings: `ORDERS=0` turns it off, `ORDERS_MS` (default 300000 = 5 min) is the time between full reads, `ORDERS_PAGES` (default 250) the most pages per read,
   `ORDERS_SECONDS` (default 420) the longest one read may take. Run `orders scan` to read it now.
 
 **Item pictures.** The website can show a small picture next to every item name (Market, Top orders, portfolio, details). The
@@ -354,7 +357,7 @@ Set before `npm run bot`. Windows Command Prompt: `set NAME=value`. Mac/Linux: `
 | `SERVER_HOST`, `SERVER_PORT` | donutsmp.net, 19132 | server address |
 | `BOT_API_PORT` | 8080 | website/API port |
 | `ORDERS=0` | on | turn the order-house reader off |
-| `ORDERS_MS` | 1800000 | time between full order-house reads (ms) |
+| `ORDERS_MS` | 300000 | time between full order-house reads (ms) |
 | `ORDERS_PAGES` | 250 | most pages read per order-house read |
 | `ORDERS_SECONDS` | 420 | longest one order-house read may take |
 | `BOT_HOST` | 127.0.0.1 | address the website listens on (needs `BOT_PASSWORD` if it is not this computer) |

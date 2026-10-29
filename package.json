@@ -11,7 +11,7 @@
   "scripts": {
     "start": "node bot/index.js",
     "bot": "node bot/index.js",
-    "test": "node bot/test.js && node bot/test-order.js && node bot/test-crypto.js && node bot/test-inv.js && node bot/test-ledger.js && node bot/test-market.js && node bot/test-access.js && node bot/test-orders.js && node bot/test-forceupdate.js",
+    "test": "node bot/test.js && node bot/test-order.js && node bot/test-crypto.js && node bot/test-inv.js && node bot/test-ledger.js && node bot/test-market.js && node bot/test-access.js && node bot/test-orders.js && node bot/test-forceupdate.js && node bot/test-ordersloop.js",
     "pinghandshake": "node bot/pinghandshake.js",
     "rakdebug": "node bot/rakdebug.js"
   },

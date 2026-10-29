@@ -31,7 +31,7 @@ const ledger = new Ledger(log);
 const market = new Market(log);
 const access = new Access(process.env, log);
 const orderBoard = new OrderBoard(log);
-const ORDERS_MS = +process.env.ORDERS_MS || 1800000;     // how often the whole order house is read (ms, 30 min)
+const ORDERS_MS = +process.env.ORDERS_MS || 300000;      // time between full order-house reads (ms, 5 min)
 
 // Where the item pictures are. Normally data/icons, but a zip extracted by Windows often ends up one folder deeper,
 // so look a few levels down for a folder that has diamond.webp in it.
@@ -58,7 +58,8 @@ const watch = new Watchlist();
 const MARKET_MS = +process.env.MARKET_MS || 7000;     // pause between in-game price searches (ms)
 // Only one auction-house job at a time. Trading, manual commands and the price scanner all share the same window.
 let ahChain = Promise.resolve();
-function withAh(fn) { const run = ahChain.then(fn, fn); ahChain = run.catch(() => {}); return run; }
+let ahPending = 0;                      // jobs running or waiting; a long job can check this to give way
+function withAh(fn) { ahPending++; const run = ahChain.then(fn, fn); ahChain = run.catch(() => {}).then(() => { ahPending--; }); return run; }
 
 async function api(p) {
   const r = await fetch(BASE + p, { headers: { Authorization: 'Bearer ' + KEY, Accept: 'application/json' } });
@@ -269,7 +270,7 @@ async function buy(h) {
 }
 
 // ---- commands (console + API) ----
-const LOCKED = new Set(['scan', 'buynow', 'sellnow', 'peek', 'inspectbuy', 'orders', 'peekorders']);
+const LOCKED = new Set(['scan', 'buynow', 'sellnow', 'peek', 'inspectbuy', 'peekorders']);   // ('orders' takes the lock itself)
 async function run(line) {
   const c = (line.trim().split(/\s+/)[0] || '').toLowerCase();
   return LOCKED.has(c) ? withAh(() => runInner(line)) : runInner(line);
@@ -288,7 +289,12 @@ async function runInner(line) {
     }
     case 'orders': { // orders on | off | status | scan
       if (a[0] === 'on') orderBoard.on = true; else if (a[0] === 'off') { orderBoard.on = false; orderBoard.save(); }
-      else if (a[0] === 'scan') { if (!state.connected) return 'not connected yet'; await ordersOnce(); }
+      else if (a[0] === 'scan') {       // read the whole order house now, in the background (takes a minute or two)
+        if (!state.connected) return 'not connected yet';
+        if (ordersRunning) return 'a read is already running, watch the Top orders tab';
+        ordersOnce(true);
+        return { started: true, note: 'reading the whole order house now; the Top orders tab fills in as pages are read (a minute or two)' };
+      }
       return orderBoard.status();
     }
     case 'peekorders': { // peekorders: open /orders and print every tile with what we parsed from it (read-only)
@@ -374,23 +380,40 @@ async function runInner(line) {
 
 // ---- order house (top buy orders) ----
 // Reads EVERY page of the order house (sorted by most per item) and keeps the best price per item.
-// It holds the auction-house lock the whole time (a minute or two), so trading waits; hence once every 30 minutes.
-async function ordersOnce() {
+// A full read takes a minute or two, so it gives way whenever trading or another job is waiting for the auction house
+// (after 20 s of work) and carries on from the same page a few seconds later. `manual` reads never give way.
+let sweep = null, ordersRunning = false;           // sweep = a full read in progress: { best, next }
+async function ordersOnce(manual = false) {
+  if (ordersRunning) return 'busy';
+  ordersRunning = true;
+  if (!sweep || manual) sweep = { best: new Map(), next: 0 };
   try {
-    log('orders: reading the whole order house, trading waits until it is done');
+    if (sweep.next === 0) log('orders: reading the whole order house' + (manual ? '' : ', pausing whenever trading needs the auction house'));
     const scan = await withAh(() => scanOrders(ah, {
-      maxPages: +process.env.ORDERS_PAGES || 250, maxSeconds: +process.env.ORDERS_SECONDS || 420,
+      best: sweep.best, startPage: sweep.next, maxPages: +process.env.ORDERS_PAGES || 250, maxSeconds: +process.env.ORDERS_SECONDS || 420,
+      wait: +process.env.ORDERS_WAIT_MS || 1500, yieldAfter: manual ? 1e9 : (process.env.ORDERS_YIELD_SECONDS !== undefined ? +process.env.ORDERS_YIELD_SECONDS : 20), shouldYield: () => ahPending > 1,
       onPage: (best, n) => { orderBoard.progress = { page: n, items: best.size }; if (n % 10 === 0) applyScan(orderBoard, { items: best }, true); if (n % 50 === 0) log(`orders: page ${n}, ${best.size} items so far`); },
     }));
     applyScan(orderBoard, scan);
+    sweep.next = scan.next; if (!scan.next) sweep = null;
     log('orders: ' + orderBoard.note);
-  } catch (e) { orderBoard.progress = null; orderBoard.note = 'scan failed: ' + String(e.message).slice(0, 100); log('orders: ' + orderBoard.note); try { ah.closeAll(); } catch {} }
+    return scan.next ? 'paused' : 'done';
+  } catch (e) {
+    sweep = null; orderBoard.progress = null; orderBoard.note = 'scan failed: ' + String(e.message).slice(0, 100); log('orders: ' + orderBoard.note);
+    try { ah.closeAll(); } catch {}
+    return 'failed';
+  } finally { ordersRunning = false; }
 }
 async function ordersLoop() {
   await sleep(20000);
   for (;;) {
-    if (orderBoard.on && state.connected) await ordersOnce();
-    await sleep(ORDERS_MS);
+    let wait = 3000;
+    if (orderBoard.on && state.connected) {
+      const r = await ordersOnce();
+      if (r === 'paused') wait = 4000;                                  // trading had its turn, carry on soon
+      else if (r !== 'busy') { orderBoard.nextAt = Date.now() + ORDERS_MS; wait = ORDERS_MS; }
+    }
+    await sleep(wait);
   }
 }
 
@@ -546,4 +569,4 @@ if (require.main === module) {
   rl.prompt();
   rl.on('line', async (l) => { try { const r = await run(l); console.log(typeof r === 'string' ? r : JSON.stringify(r, null, 1)); } catch (e) { console.log('error:', e.message); } rl.prompt(); });
 }
-module.exports = { run, rules, state, _test: { setAh: (x) => { ah = x; state.connected = true; }, market, watch } };
+module.exports = { run, rules, state, _test: { setAh: (x) => { ah = x; state.connected = true; }, market, watch, orderBoard, ordersOnce, withAh } };
