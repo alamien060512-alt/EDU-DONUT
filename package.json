@@ -1,0 +1,27 @@
+{
+  "name": "donutsmp-trend",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "start": "node server.js",
+    "bot": "node bot/index.js",
+    "test": "node bot/test.js && node bot/test-order.js && node bot/test-crypto.js && node bot/test-inv.js && node bot/test-ledger.js && node bot/test-market.js",
+    "pinghandshake": "node bot/pinghandshake.js",
+    "rakdebug": "node bot/rakdebug.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alamien060512-alt/DonutsmpTrend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/alamien060512-alt/DonutsmpTrend/issues"
+  },
+  "homepage": "https://github.com/alamien060512-alt/DonutsmpTrend#readme",
+  "dependencies": {
+    "bedrock-protocol": "^3.60.1",
+    "exceljs": "^4.4.0"
+  }
+}

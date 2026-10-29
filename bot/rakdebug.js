@@ -1,0 +1,20 @@
+// Usage: npm run rakdebug   -> runs the bot's RakNet handshake alone and prints every step.
+require('./raknet-patch');
+const { Client } = require('jsp-raknet');
+const host = process.argv[2] || process.env.SERVER_HOST || 'donutsmp.net';
+const port = +(process.argv[3] || process.env.SERVER_PORT || 19132);
+const names = { 0x1c: 'UnconnectedPong', 0x06: 'OpenConnectionReply1', 0x08: 'OpenConnectionReply2', 0x19: 'IncompatibleProtocol', 0x14: 'NoFreeConnections', 0x11: 'ConnectionAttemptFailed' };
+const t0 = Date.now(), at = () => ((Date.now() - t0) / 1000).toFixed(1) + 's';
+const ip = require('child_process').execFileSync('node', ['-e', "require('dns').lookup(process.argv[1],{family:4},(e,a)=>console.log(a))", host]).toString().trim();
+console.log('using IP', ip);
+const c = new Client(ip, port);
+const handle = c.handle.bind(c);
+c.handle = (buf, r) => { if (buf[0] === 6 || (buf[0] >= 0x80 && buf[0] !== 0xc0 && buf[0] !== 0xa0)) console.log('   bytes:', buf.toString('hex'));
+  console.log(at(), '<-', names[buf[0]] || (buf[0] > 0x80 ? 'datagram 0x' + buf[0].toString(16) : '0x' + buf[0].toString(16)), buf.length + ' bytes'); return handle(buf, r); };
+const send = c.sendBuffer.bind(c);
+c.sendBuffer = (b, to) => { if (b[0] === 0x80 && b.length > 20) console.log('   bytes:', b.toString('hex')); console.log(at(), '->', '0x' + b[0].toString(16), b.length + ' bytes'); return send(b, to); };
+c.on('connecting', (i) => console.log(at(), 'connecting', JSON.stringify(i)));
+c.on('connected', () => { console.log(at(), 'RAKNET CONNECTED - handshake is fine'); process.exit(0); });
+c.on('error', (e) => console.log(at(), 'error', e));
+c.connect().catch((e) => console.log('connect error', e));
+setTimeout(() => { console.log(at(), 'GAVE UP: no full connection'); process.exit(1); }, 12000);

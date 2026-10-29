@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DonutSMP Prices</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --ink:#151a22; --muted:#5d6676; --line:#e2e5ea; --soft:#eef0f4;
+  --accent:#c2255c; --accent-ink:#ffffff; --up:#15803d; --down:#c92a2a; --focus:#1c7ed6;
+  --radius:12px; --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1218; --panel:#171b23; --ink:#eceff4; --muted:#9aa3b2; --line:#2a303c; --soft:#1f2530;
+    --accent:#f06595; --accent-ink:#1a0710; --up:#51cf66; --down:#ff6b6b; --focus:#74c0fc; --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1218; --panel:#171b23; --ink:#eceff4; --muted:#9aa3b2; --line:#2a303c; --soft:#1f2530;
+  --accent:#f06595; --accent-ink:#1a0710; --up:#51cf66; --down:#ff6b6b; --focus:#74c0fc; --shadow:none;
+}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:16px}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+h1{font-size:22px;margin:0;letter-spacing:-.01em}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:var(--soft);color:var(--muted);font-size:13px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.ok .dot{background:var(--up)} .pill.bad .dot{background:var(--down)}
+.spacer{flex:1}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+.btn{border:1px solid var(--line);background:var(--panel);padding:7px 12px;border-radius:8px}
+.btn:hover{background:var(--soft)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.primary:hover{filter:brightness(1.05)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow)}
+.card .k{color:var(--muted);font-size:13px}
+.card .v{font-size:24px;font-weight:650;letter-spacing:-.02em;margin-top:2px}
+.card .s{color:var(--muted);font-size:13px;margin-top:2px;overflow-wrap:anywhere}
+.pos{color:var(--up)} .neg{color:var(--down)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+.toolbar input[type=search],.toolbar input[type=text],.toolbar select{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 10px;min-width:0}
+.toolbar input[type=search]{flex:1 1 220px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;align-items:start}
+@media (max-width:980px){.layout{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.tablewrap{max-height:70vh;overflow:auto}
+table{width:100%;border-collapse:collapse}
+th,td{padding:9px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+thead th{position:sticky;top:0;background:var(--panel);z-index:1;font-weight:600;font-size:13px;color:var(--muted)}
+th button{all:unset;cursor:pointer;display:inline-flex;gap:4px;align-items:center}
+th button:focus-visible{outline:2px solid var(--focus)}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--soft)}
+tbody tr.sel{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+td.name{font-weight:560}
+td small{color:var(--muted)}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+.detail{padding:14px;position:sticky;top:12px}
+.detail h2{margin:0 0 2px;font-size:19px}
+.big{font-size:30px;font-weight:700;letter-spacing:-.02em}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin:12px 0}
+.stats div span{display:block;color:var(--muted);font-size:12px}
+.chart{width:100%;height:190px;display:block;background:var(--soft);border-radius:8px}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.form label{display:block;font-size:12px;color:var(--muted)}
+.form input{width:100%;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 9px}
+.form .full{grid-column:1/-1}
+.note{color:var(--muted);font-size:13px;margin:8px 0 0}
+.banner{background:color-mix(in srgb,var(--down) 14%,var(--panel));border:1px solid var(--down);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px}
+.hide-sm{}
+@media (max-width:700px){.hide-sm{display:none}.wrap{padding:12px}th,td{padding:8px}.cards{gap:8px}.card{padding:10px 12px}.card .v{font-size:20px}}
+.spark{vertical-align:middle}
+.sr{position:absolute;left:-9999px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>DonutSMP Prices</h1>
+    <span class="pill" id="botPill"><span class="dot"></span><span id="botText">connecting</span></span>
+    <span class="spacer"></span>
+    <button class="btn" id="scanBtn" type="button">Pause scanning</button>
+    <button class="btn" id="themeBtn" type="button" aria-label="Toggle dark mode">Theme</button>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <section class="cards" aria-label="Summary">
+    <div class="card"><div class="k">Items tracked</div><div class="v" id="cTracked">–</div><div class="s" id="cScan">–</div></div>
+    <div class="card"><div class="k">Realized profit (bot)</div><div class="v" id="cProfit">–</div><div class="s" id="cProfitSub">–</div></div>
+    <div class="card"><div class="k">Money in listings</div><div class="v" id="cListed">–</div><div class="s" id="cListedSub">–</div></div>
+    <div class="card"><div class="k">Bot</div><div class="v" id="cBot">–</div><div class="s" id="cBotSub">–</div></div>
+  </section>
+
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="Search items (e.g. diamond, elytra)" aria-label="Search items">
+    <select id="sort" aria-label="Sort by">
+      <option value="name">Sort: name</option>
+      <option value="high">Price: high to low</option>
+      <option value="low">Price: low to high</option>
+      <option value="up">Biggest rise (24h)</option>
+      <option value="down">Biggest drop (24h)</option>
+      <option value="n">Most listings</option>
+      <option value="new">Recently updated</option>
+    </select>
+    <input type="text" id="track" placeholder="Track another item" aria-label="Track another item" size="18">
+    <button class="btn" id="trackBtn" type="button">Add</button>
+  </div>
+
+  <div class="layout">
+    <section class="panel" aria-label="Prices">
+      <div class="tablewrap">
+        <table>
+          <thead><tr>
+            <th><button data-s="name" type="button">Item</button></th>
+            <th><button data-s="low" type="button">Lowest</button></th>
+            <th class="hide-sm"><button data-s="avg" type="button">Avg of 5 cheapest</button></th>
+            <th class="hide-sm"><button data-s="n" type="button">Listings seen</button></th>
+            <th><button data-s="up" type="button">24h</button></th>
+            <th class="hide-sm">Trend</th>
+            <th class="hide-sm"><button data-s="new" type="button">Updated</button></th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="empty" class="empty" hidden></div>
+      </div>
+    </section>
+
+    <aside class="panel detail" id="detail" aria-live="polite">
+      <div class="empty">Select an item to see its price history and set a buy rule.</div>
+    </aside>
+  </div>
+  <p class="note">Prices are the cheapest plain (un-enchanted) listings the bot sees. Each item is re-checked in turn, so the newest ones may be a few minutes old. Data stays on your computer.</p>
+</div>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const S = { items: [], status: {}, bot: {}, trades: null, rules: [], sel: null, sort: 'name', q: '', hist: null, msg: null };
+const NS = 'http://www.w3.org/2000/svg';
+
+const fmt = (n) => {
+  if (n == null || isNaN(n)) return '–';
+  const a = Math.abs(n);
+  const f = (v, u) => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)).replace(/\.?0+$/, '') + u;
+  if (a >= 1e9) return '$' + f(n / 1e9, 'B');
+  if (a >= 1e6) return '$' + f(n / 1e6, 'M');
+  if (a >= 1e3) return '$' + f(n / 1e3, 'K');
+  return '$' + (Number.isInteger(n) ? n : n.toFixed(2));
+};
+const full = (n) => (n == null ? '' : '$' + Math.round(n).toLocaleString('en-US'));
+const pct = (x) => (x == null ? '–' : (x >= 0 ? '+' : '') + (x * 100).toFixed(1) + '%');
+const ago = (t) => {
+  if (!t) return '–';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  return s < 60 ? 'just now' : s < 3600 ? Math.floor(s / 60) + ' min ago' : s < 86400 ? Math.floor(s / 3600) + ' h ago' : Math.floor(s / 86400) + ' d ago';
+};
+const el = (tag, props = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) { if (k === 'class') e.className = v; else if (k === 'text') e.textContent = v; else e.setAttribute(k, v); }
+  kids.forEach((c) => e.append(c));
+  return e;
+};
+async function get(path) { const r = await fetch(path, { cache: 'no-store' }); if (!r.ok) throw new Error(path + ' ' + r.status); return r.json(); }
+async function cmd(command) {
+  const r = await fetch('/command', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bot': '1' }, body: JSON.stringify({ command }) });
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j.result;
+}
+
+// ---------- data ----------
+async function refresh() {
+  try {
+    const [m, st, tr, rl] = await Promise.all([get('/market'), get('/status'), get('/trades').catch(() => null), get('/rules').catch(() => [])]);
+    S.items = m.items; S.status = m.status; S.bot = st; S.trades = tr; S.rules = rl;
+    $('banner').hidden = true;
+    if (S.sel) S.hist = await get('/market/' + encodeURIComponent(S.sel)).catch(() => null);
+  } catch (e) {
+    $('banner').hidden = false;
+    $('banner').textContent = 'Cannot reach the bot at ' + location.origin + '. Make sure it is running (npm run bot) and open this page from it.';
+    $('botPill').className = 'pill bad'; $('botText').textContent = 'offline';
+    return;
+  }
+  render();
+}
+
+// ---------- render ----------
+function sorted() {
+  const q = S.q.trim().toLowerCase();
+  let a = S.items.filter((i) => !q || i.name.toLowerCase().includes(q) || i.item.includes(q.replace(/\s+/g, '_')));
+  const by = {
+    name: (x, y) => x.name.localeCompare(y.name),
+    high: (x, y) => y.low - x.low, low: (x, y) => x.low - y.low,
+    avg: (x, y) => y.avg5 - x.avg5,
+    up: (x, y) => (y.change24h ?? -9) - (x.change24h ?? -9),
+    down: (x, y) => (x.change24h ?? 9) - (y.change24h ?? 9),
+    n: (x, y) => y.n - x.n, new: (x, y) => y.updated - x.updated,
+  }[S.sort];
+  return a.sort(by);
+}
+function spark(vals, up) {
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('width', 84); svg.setAttribute('height', 24); svg.setAttribute('class', 'spark'); svg.setAttribute('aria-hidden', 'true');
+  if (!vals || vals.length < 2) return svg;
+  const mn = Math.min(...vals), mx = Math.max(...vals), r = mx - mn || 1;
+  const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * 82 + 1},${22 - ((v - mn) / r) * 20}`).join(' ');
+  const pl = document.createElementNS(NS, 'polyline'); pl.setAttribute('points', pts); pl.setAttribute('fill', 'none'); pl.setAttribute('stroke', up == null ? 'var(--muted)' : up >= 0 ? 'var(--up)' : 'var(--down)'); pl.setAttribute('stroke-width', '1.6');
+  svg.append(pl); return svg;
+}
+function render() {
+  const b = S.bot, st = S.status, tr = S.trades && S.trades.summary;
+  $('botPill').className = 'pill ' + (b.connected ? 'ok' : 'bad');
+  $('botText').textContent = b.connected ? (b.live ? 'bot online · LIVE trading' : 'bot online · dry run') : 'bot not in game';
+  $('cTracked').textContent = st.tracked ?? '–';
+  $('cScan').textContent = st.scanning ? (st.current ? 'Checking ' + st.current.replace(/_/g, ' ') + ' · pass ' + (st.passes + 1) : 'Scanning · last update ' + ago(st.lastUpdate)) : 'Scanning paused';
+  $('scanBtn').textContent = st.scanning ? 'Pause scanning' : 'Start scanning';
+  $('cProfit').textContent = tr ? fmt(tr.realizedProfit) : '–';
+  $('cProfit').className = 'v ' + (tr && tr.realizedProfit > 0 ? 'pos' : tr && tr.realizedProfit < 0 ? 'neg' : '');
+  $('cProfitSub').textContent = tr ? `${tr.sold} sold · ${fmt(tr.spent)} spent in total` : 'no trades yet';
+  $('cListed').textContent = tr ? fmt(tr.expectedRevenue) : '–';
+  $('cListedSub').textContent = tr ? `${tr.listed} listing${tr.listed === 1 ? '' : 's'} · cost ${fmt(tr.costListed)}` : '–';
+  $('cBot').textContent = b.connected ? (b.live ? 'Live' : 'Dry run') : 'Offline';
+  $('cBotSub').textContent = b.paused ? 'Buying paused: ' + b.paused : (b.listed != null ? `${b.listed} listed${b.maxListings ? ' / limit ' + b.maxListings : ''}` : '');
+  const rows = sorted(), tb = $('rows'); tb.textContent = '';
+  for (const i of rows) {
+    const tr2 = el('tr', { tabindex: 0, 'data-item': i.item, class: i.item === S.sel ? 'sel' : '', 'aria-label': i.name });
+    tr2.append(el('td', { class: 'name', text: i.name }));
+    tr2.append(el('td', { text: fmt(i.low), title: full(i.low) }));
+    tr2.append(el('td', { class: 'hide-sm', text: fmt(i.avg5), title: full(i.avg5) }));
+    tr2.append(el('td', { class: 'hide-sm', text: i.n }));
+    tr2.append(el('td', { class: i.change24h == null ? '' : i.change24h >= 0 ? 'pos' : 'neg', text: pct(i.change24h) }));
+    const tdS = el('td', { class: 'hide-sm' }); tdS.append(spark(i.spark, i.change24h)); tr2.append(tdS);
+    tr2.append(el('td', { class: 'hide-sm', text: ago(i.updated) }));
+    const open = () => select(i.item);
+    tr2.addEventListener('click', open); tr2.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+    tb.append(tr2);
+  }
+  const em = $('empty');
+  em.hidden = rows.length > 0;
+  em.textContent = S.items.length ? 'No items match your search.' : 'No prices yet. The bot is searching the auction house item by item; the first prices appear within a minute once it is in game.';
+  renderDetail();
+}
+function chart(points) {
+  const W = 360, H = 190, P = { l: 52, r: 10, t: 12, b: 22 };
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'chart'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'Price history');
+  const mk = (t, a, txt) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (txt != null) e.textContent = txt; return e; };
+  if (points.length < 2) { svg.append(mk('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', fill: 'var(--muted)', 'font-size': 13 }, 'History appears after a few price checks')); return svg; }
+  const t0 = points[0][0], t1 = points[points.length - 1][0];
+  let mn = Math.min(...points.map((p) => p[1])), mx = Math.max(...points.map((p) => p[1]));
+  if (mn === mx) { mn *= 0.98; mx *= 1.02; }
+  const X = (t) => P.l + ((t - t0) / (t1 - t0 || 1)) * (W - P.l - P.r), Y = (v) => P.t + (1 - (v - mn) / (mx - mn)) * (H - P.t - P.b);
+  for (let g = 0; g <= 3; g++) {
+    const v = mn + ((mx - mn) * g) / 3, y = Y(v);
+    svg.append(mk('line', { x1: P.l, x2: W - P.r, y1: y, y2: y, stroke: 'var(--line)', 'stroke-width': 1 }));
+    svg.append(mk('text', { x: P.l - 6, y: y + 4, 'text-anchor': 'end', fill: 'var(--muted)', 'font-size': 10 }, fmt(Math.round(v))));
+  }
+  const d = points.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
+  svg.append(mk('path', { d, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+  const span = t1 - t0, lab = (t) => (span > 86400000 ? new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' }) : new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+  svg.append(mk('text', { x: P.l, y: H - 6, fill: 'var(--muted)', 'font-size': 10 }, lab(t0)));
+  svg.append(mk('text', { x: W - P.r, y: H - 6, 'text-anchor': 'end', fill: 'var(--muted)', 'font-size': 10 }, lab(t1)));
+  const cross = mk('line', { y1: P.t, y2: H - P.b, stroke: 'var(--muted)', 'stroke-dasharray': '3 3', visibility: 'hidden' });
+  const dot = mk('circle', { r: 4, fill: 'var(--accent)', visibility: 'hidden' });
+  const tip = mk('text', { fill: 'var(--ink)', 'font-size': 11, 'font-weight': 600, visibility: 'hidden' });
+  svg.append(cross, dot, tip);
+  svg.addEventListener('pointermove', (e) => {
+    const r = svg.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width) * W;
+    let best = points[0], bd = 1e9; for (const p of points) { const dd = Math.abs(X(p[0]) - x); if (dd < bd) { bd = dd; best = p; } }
+    cross.setAttribute('x1', X(best[0])); cross.setAttribute('x2', X(best[0])); dot.setAttribute('cx', X(best[0])); dot.setAttribute('cy', Y(best[1]));
+    tip.textContent = fmt(best[1]) + ' · ' + lab(best[0]); tip.setAttribute('x', Math.min(Math.max(X(best[0]), P.l + 40), W - 70)); tip.setAttribute('y', P.t + 8);
+    [cross, dot, tip].forEach((n) => n.setAttribute('visibility', 'visible'));
+  });
+  svg.addEventListener('pointerleave', () => [cross, dot, tip].forEach((n) => n.setAttribute('visibility', 'hidden')));
+  return svg;
+}
+function renderDetail() {
+  const d = $('detail');
+  if (!S.sel) return;
+  const it = S.items.find((i) => i.item === S.sel); if (!it) return;
+  const keep = { buy: d.querySelector('#fBuy') && d.querySelector('#fBuy').value, sell: d.querySelector('#fSell') && d.querySelector('#fSell').value };
+  d.textContent = '';
+  d.append(el('h2', { text: it.name }), el('div', { class: 'big', text: fmt(it.low), title: full(it.low) }));
+  d.append(el('div', { class: 'note', text: 'lowest price now · updated ' + ago(it.updated) }));
+  d.append(chart((S.hist && S.hist.history) || []));
+  const stat = (k, v, cls = '') => el('div', {}, el('span', { text: k }), el('b', { class: cls, text: v }));
+  d.append(el('div', { class: 'stats' }, stat('Average of 5 cheapest', fmt(it.avg5)), stat('Listings seen', String(it.n)), stat('Change (24h)', pct(it.change24h), it.change24h == null ? '' : it.change24h >= 0 ? 'pos' : 'neg'), stat('Source', S.hist ? (S.hist.source === 'api' ? 'official API' : 'in-game scan') : '–')));
+  const rule = S.rules.find((r) => r.item === it.item);
+  d.append(el('h3', { text: 'Bot rule', style: 'margin:14px 0 0;font-size:15px' }));
+  d.append(el('p', { class: 'note', text: rule ? `Buying ${it.name} at ${full(rule.maxPrice)} or less, selling at ${rule.sellUnit ? full(rule.sellUnit) + ' each' : rule.sellMultiple + 'x'}.` : 'No rule yet. The bot only buys when you set one.' }));
+  const f = el('form', { class: 'form' });
+  const inBuy = el('input', { id: 'fBuy', inputmode: 'numeric', placeholder: 'e.g. 12000', 'aria-label': 'Buy at or below' });
+  const inSell = el('input', { id: 'fSell', inputmode: 'numeric', placeholder: 'e.g. 15000', 'aria-label': 'Sell each for' });
+  if (keep.buy) inBuy.value = keep.buy; if (keep.sell) inSell.value = keep.sell;
+  f.append(el('div', {}, el('label', { for: 'fBuy', text: 'Buy at or below ($ each)' }), inBuy), el('div', {}, el('label', { for: 'fSell', text: 'Sell each for ($)' }), inSell));
+  const shown = S.msg && S.msg.item === it.item && Date.now() - S.msg.t < 10000 ? S.msg.text : '';
+  const msg = el('p', { class: 'note full', text: shown, role: 'status' });
+  const say = (text) => { S.msg = { item: it.item, text, t: Date.now() }; msg.textContent = text; };
+  const set = el('button', { class: 'btn primary', type: 'submit', text: 'Set rule' });
+  const del = el('button', { class: 'btn', type: 'button', text: 'Remove rule' });
+  f.append(el('div', { class: 'full', style: 'display:flex;gap:8px' }, set, del), msg);
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = Number(inBuy.value.replace(/[,\s$]/g, '')), s2 = Number(inSell.value.replace(/[,\s$]/g, ''));
+    if (!(b > 0) || !(s2 > b)) { say('Enter a buy price, and a sell price higher than it.'); return; }
+    try { await cmd(`buy ${it.item} ${b} sell ${s2}`); say('Rule saved. The bot buys only when trading is live (live on).'); refresh(); } catch (err) { say('Failed: ' + err.message); }
+  });
+  del.addEventListener('click', async () => { try { await cmd('drop ' + it.item); say('Rule removed.'); refresh(); } catch (err) { say('Failed: ' + err.message); } });
+  d.append(f);
+}
+function select(item) { S.sel = item; S.hist = null; renderDetail(); refresh(); if (matchMedia('(max-width:980px)').matches) $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' }); document.querySelectorAll('#rows tr').forEach((r) => r.classList.toggle('sel', r.dataset.item === item)); }
+
+// ---------- controls ----------
+$('q').addEventListener('input', (e) => { S.q = e.target.value; render(); });
+$('sort').addEventListener('change', (e) => { S.sort = e.target.value; render(); });
+document.querySelectorAll('th button[data-s]').forEach((b) => b.addEventListener('click', () => { S.sort = b.dataset.s === 'up' && S.sort === 'up' ? 'down' : b.dataset.s === 'low' && S.sort === 'low' ? 'high' : b.dataset.s === 'low' ? 'low' : b.dataset.s; $('sort').value = [...$('sort').options].some((o) => o.value === S.sort) ? S.sort : 'name'; render(); }));
+$('scanBtn').addEventListener('click', async () => { try { await cmd('market ' + (S.status.scanning ? 'off' : 'on')); refresh(); } catch (e) { alert(e.message); } });
+$('trackBtn').addEventListener('click', async () => {
+  const v = $('track').value.trim(); if (!v) return;
+  try { await cmd('watch add ' + v.toLowerCase().replace(/\s+/g, '_')); $('track').value = ''; refresh(); } catch (e) { alert(e.message); }
+});
+$('track').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('trackBtn').click(); });
+$('themeBtn').addEventListener('click', () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const next = cur === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('theme', next); } catch {}
+});
+try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+
+refresh(); setInterval(refresh, 8000);
+</script>
+</body>
+</html>
